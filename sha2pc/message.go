@@ -47,20 +47,6 @@ func parseMessage(msg Message, expectedKind byte) ([]byte, error) {
 	return msg[2:], nil
 }
 
-// chunkWriter serializes length-prefixed byte slices.
-type chunkWriter struct {
-	// Buffer embeds the byte buffer that accumulates chunked data.
-	bytes.Buffer
-}
-
-// writeChunk appends a single length-prefixed data block.
-func (w *chunkWriter) writeChunk(data []byte) {
-	var hdr [4]byte
-	binary.BigEndian.PutUint32(hdr[:], uint32(len(data)))
-	w.Write(hdr[:])
-	w.Write(data)
-}
-
 // chunkReader deserializes length-prefixed byte slices.
 type chunkReader struct {
 	// Reader provides sequential access to the serialized chunk stream.

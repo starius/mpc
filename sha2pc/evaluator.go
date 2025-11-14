@@ -1,6 +1,7 @@
 package sha2pc
 
 import (
+	"bytes"
 	"crypto/elliptic"
 	"crypto/sha256"
 	"fmt"
@@ -136,8 +137,8 @@ func (e *Evaluator) Round2(msg Message, input [32]byte) (Message, error) {
 	}
 	e.receiver = receiver
 
-	var out chunkWriter
-	out.writeChunk(encodePoints(points))
+	var out bytes.Buffer
+	writeChunk(&out, encodePoints(points))
 	return newMessage(round2Kind, out.Bytes()), nil
 }
 

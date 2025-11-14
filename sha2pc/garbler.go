@@ -1,6 +1,7 @@
 package sha2pc
 
 import (
+	"bytes"
 	"crypto/elliptic"
 	"crypto/sha256"
 	"fmt"
@@ -96,12 +97,12 @@ func (g *Garbler) Round1(input [32]byte) (Message, error) {
 	}
 	g.otState = otState
 
-	var payload chunkWriter
+	var payload bytes.Buffer
 	payload.Write(g.key[:])
-	payload.writeChunk(encodeGarbledTables(garbled.Gates))
-	payload.writeChunk(encodeLabels(garblerLabels))
-	payload.writeChunk(encodeOutputHints(selectOutputWires(g.circ, garbled)))
-	payload.writeChunk(encodeOTSetup(g.curve, otState.Ax, otState.Ay))
+	writeChunk(&payload, encodeGarbledTables(garbled.Gates))
+	writeChunk(&payload, encodeLabels(garblerLabels))
+	writeChunk(&payload, encodeOutputHints(selectOutputWires(g.circ, garbled)))
+	writeChunk(&payload, encodeOTSetup(g.curve, otState.Ax, otState.Ay))
 
 	g.completed = false
 	return newMessage(round1Kind, payload.Bytes()), nil
@@ -128,8 +129,8 @@ func (g *Garbler) Round3(msg Message) (Message, error) {
 	if err != nil {
 		return nil, err
 	}
-	var out chunkWriter
-	out.writeChunk(ciphertext)
+	var out bytes.Buffer
+	writeChunk(&out, ciphertext)
 	return newMessage(round3Kind, out.Bytes()), nil
 }
 
