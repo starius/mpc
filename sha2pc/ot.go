@@ -25,16 +25,22 @@ type ecPoint struct {
 type otSenderState struct {
 	// curve holds the elliptic curve in use.
 	curve elliptic.Curve
+
 	// hash stores the KDF hash function.
 	hash hash.Hash
+
 	// a is the sender's scalar.
 	a *big.Int
+
 	// Ax, Ay form the public point A = g^a.
 	Ax, Ay *big.Int
+
 	// AaInvx is the x coordinate of A^{-a}.
 	AaInvx *big.Int
+
 	// AaInvy is the y coordinate of A^{-a}.
 	AaInvy *big.Int
+
 	// wires lists the wire labels to protect with OT.
 	wires []ot.Wire
 }
@@ -95,12 +101,16 @@ func (s *otSenderState) encrypt(points []ecPoint) ([]byte, error) {
 type otReceiverState struct {
 	// curve holds the elliptic curve in use.
 	curve elliptic.Curve
+
 	// hash stores the KDF hash function.
 	hash hash.Hash
+
 	// Ax, Ay form the sender's public point A.
 	Ax, Ay *big.Int
+
 	// choices stores the receiver's selection bits.
 	choices []bool
+
 	// bVals keeps the receiver's random scalars.
 	bVals []*big.Int
 }

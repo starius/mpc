@@ -10,6 +10,7 @@ import (
 type Config struct {
 	// Rand feeds protocol randomness. Defaults to crypto/rand.Reader.
 	Rand io.Reader
+
 	// Curve selects the OT group. Defaults to P-256.
 	Curve elliptic.Curve
 }

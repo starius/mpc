@@ -14,21 +14,28 @@ import (
 type Garbler struct {
 	// rand yields randomness for garbling and OT.
 	rand io.Reader
+
 	// circ stores the shared computation circuit.
 	circ *circuit.Circuit
+
 	// curve selects the OT elliptic curve.
 	curve elliptic.Curve
+
 	// garblerBits counts the garbler's private input bits.
 	garblerBits int
+
 	// evaluatorBits counts the evaluator's private input bits.
 	evaluatorBits int
 
 	// garbled caches the latest garbled circuit.
 	garbled *circuit.Garbled
+
 	// key stores the AES garbling key.
 	key [32]byte
+
 	// otState keeps the pending OT sender state.
 	otState *otSenderState
+
 	// completed tracks whether Finalize was invoked.
 	completed bool
 }

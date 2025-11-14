@@ -14,23 +14,31 @@ import (
 type Evaluator struct {
 	// rand yields randomness for OT choices.
 	rand io.Reader
+
 	// circ stores the shared computation circuit.
 	circ *circuit.Circuit
+
 	// curve selects the OT elliptic curve.
 	curve elliptic.Curve
+
 	// garblerBits counts the garbler's input bits.
 	garblerBits int
+
 	// evaluatorBits counts the evaluator's input bits.
 	evaluatorBits int
 
 	// key stores the AES garbling key.
 	key [32]byte
+
 	// garbled caches the received gate tables.
 	garbled [][]ot.Label
+
 	// wires holds the evaluator's running wire labels.
 	wires []ot.Label
+
 	// outputHints stores the garbler's output label pairs.
 	outputHints []ot.Wire
+
 	// receiver keeps the active OT receiver state.
 	receiver *otReceiverState
 }
