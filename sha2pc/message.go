@@ -7,17 +7,22 @@ import (
 )
 
 // Message represents an opaque protocol payload that callers forward
-// to the other participant using their preferred transport.  The first
+// to the other participant using their preferred transport. The first
 // byte encodes the version, the second byte the round identifier, and
 // the remaining bytes contain round-specific data.
 type Message []byte
 
 const (
+	// messageVersion identifies the binary format version stored in every Message.
 	messageVersion byte = 1
 
+	// round1Kind categorizes round-one payloads that carry the garbled circuit.
 	round1Kind byte = 1
+	// round2Kind categorizes round-two payloads that carry OT requests.
 	round2Kind byte = 2
+	// round3Kind categorizes round-three payloads that carry OT responses.
 	round3Kind byte = 3
+	// round4Kind categorizes round-four payloads that carry the final hash share.
 	round4Kind byte = 4
 )
 
@@ -44,9 +49,11 @@ func parseMessage(msg Message, expectedKind byte) ([]byte, error) {
 
 // chunkWriter serializes length-prefixed byte slices.
 type chunkWriter struct {
+	// Buffer embeds the byte buffer that accumulates chunked data.
 	bytes.Buffer
 }
 
+// writeChunk appends a single length-prefixed data block.
 func (w *chunkWriter) writeChunk(data []byte) {
 	var hdr [4]byte
 	binary.BigEndian.PutUint32(hdr[:], uint32(len(data)))
@@ -56,15 +63,18 @@ func (w *chunkWriter) writeChunk(data []byte) {
 
 // chunkReader deserializes length-prefixed byte slices.
 type chunkReader struct {
+	// Reader provides sequential access to the serialized chunk stream.
 	*bytes.Reader
 }
 
+// newChunkReader constructs a chunk reader for the provided byte slice.
 func newChunkReader(data []byte) *chunkReader {
 	return &chunkReader{
 		Reader: bytes.NewReader(data),
 	}
 }
 
+// readChunk returns the next chunk or nil when the encoded length is zero.
 func (r *chunkReader) readChunk() ([]byte, error) {
 	var hdr [4]byte
 	if _, err := r.Read(hdr[:]); err != nil {

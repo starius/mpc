@@ -7,6 +7,7 @@ import (
 	"testing"
 )
 
+// TestProtocolDeterministic exercises the protocol with fixed vectors.
 func TestProtocolDeterministic(t *testing.T) {
 	cfg := &Config{}
 	garbler, err := NewGarbler(cfg)
@@ -27,6 +28,7 @@ func TestProtocolDeterministic(t *testing.T) {
 	runProtocol(t, garbler, evaluator, a, b)
 }
 
+// TestProtocolRandomized exercises a few random protocol executions.
 func TestProtocolRandomized(t *testing.T) {
 	cfg := &Config{}
 	for i := 0; i < 5; i++ {
@@ -51,6 +53,7 @@ func TestProtocolRandomized(t *testing.T) {
 	}
 }
 
+// runProtocol executes the entire message flow inside the same process.
 func runProtocol(t *testing.T, garbler *Garbler, evaluator *Evaluator, a, b [32]byte) {
 	t.Helper()
 
@@ -116,6 +119,7 @@ func runProtocol(t *testing.T, garbler *Garbler, evaluator *Evaluator, a, b [32]
 	}
 }
 
+// referenceHash computes sha256(xor(a,b)) locally for validation.
 func referenceHash(a, b [32]byte) [32]byte {
 	var tmp [32]byte
 	for i := 0; i < len(tmp); i++ {

@@ -13,21 +13,33 @@ import (
 	"github.com/markkurossi/mpc/ot"
 )
 
+// ecPoint stores affine coordinates used in OT.
 type ecPoint struct {
+	// x holds the affine x coordinate.
 	x *big.Int
+	// y holds the affine y coordinate.
 	y *big.Int
 }
 
+// otSenderState tracks the sender's Chou-Orlandi session.
 type otSenderState struct {
-	curve  elliptic.Curve
-	hash   hash.Hash
-	a      *big.Int
+	// curve holds the elliptic curve in use.
+	curve elliptic.Curve
+	// hash stores the KDF hash function.
+	hash hash.Hash
+	// a is the sender's scalar.
+	a *big.Int
+	// Ax, Ay form the public point A = g^a.
 	Ax, Ay *big.Int
+	// AaInvx is the x coordinate of A^{-a}.
 	AaInvx *big.Int
+	// AaInvy is the y coordinate of A^{-a}.
 	AaInvy *big.Int
-	wires  []ot.Wire
+	// wires lists the wire labels to protect with OT.
+	wires []ot.Wire
 }
 
+// newOTSenderState creates a sender OT state for the provided wires.
 func newOTSenderState(curve elliptic.Curve, wires []ot.Wire) (*otSenderState, error) {
 	params := curve.Params()
 	a, err := rand.Int(rand.Reader, params.N)
@@ -52,6 +64,7 @@ func newOTSenderState(curve elliptic.Curve, wires []ot.Wire) (*otSenderState, er
 	}, nil
 }
 
+// encrypt produces OT ciphertext pairs for the provided receiver points.
 func (s *otSenderState) encrypt(points []ecPoint) ([]byte, error) {
 	if len(points) != len(s.wires) {
 		return nil, fmt.Errorf("OT point count mismatch: got %d want %d",
@@ -78,14 +91,21 @@ func (s *otSenderState) encrypt(points []ecPoint) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// otReceiverState tracks the receiver's Chou-Orlandi session.
 type otReceiverState struct {
-	curve   elliptic.Curve
-	hash    hash.Hash
-	Ax, Ay  *big.Int
+	// curve holds the elliptic curve in use.
+	curve elliptic.Curve
+	// hash stores the KDF hash function.
+	hash hash.Hash
+	// Ax, Ay form the sender's public point A.
+	Ax, Ay *big.Int
+	// choices stores the receiver's selection bits.
 	choices []bool
-	bVals   []*big.Int
+	// bVals keeps the receiver's random scalars.
+	bVals []*big.Int
 }
 
+// newOTReceiverState creates a receiver OT state for the given inputs.
 func newOTReceiverState(curve elliptic.Curve, Ax, Ay *big.Int, choiceCount int) *otReceiverState {
 	return &otReceiverState{
 		curve:   curve,
@@ -97,6 +117,7 @@ func newOTReceiverState(curve elliptic.Curve, Ax, Ay *big.Int, choiceCount int) 
 	}
 }
 
+// buildChoice prepares the EC point corresponding to a desired bit.
 func (r *otReceiverState) buildChoice(idx int, bit bool) (ecPoint, error) {
 	params := r.curve.Params()
 	b, err := rand.Int(rand.Reader, params.N)
@@ -115,6 +136,7 @@ func (r *otReceiverState) buildChoice(idx int, bit bool) (ecPoint, error) {
 	}, nil
 }
 
+// decrypt converts OT ciphertext pairs back into the requested labels.
 func (r *otReceiverState) decrypt(data []byte) ([]ot.Label, error) {
 	if len(data)%32 != 0 {
 		return nil, fmt.Errorf("invalid OT ciphertext block")
@@ -147,6 +169,7 @@ func (r *otReceiverState) decrypt(data []byte) ([]ot.Label, error) {
 	return result, nil
 }
 
+// kdf derives XOR pads from the EC Diffie-Hellman secret.
 func kdf(hash hash.Hash, x, y *big.Int, id uint64) []byte {
 	hash.Reset()
 	hash.Write(x.Bytes())
@@ -159,6 +182,7 @@ func kdf(hash hash.Hash, x, y *big.Int, id uint64) []byte {
 	return hash.Sum(nil)
 }
 
+// xor applies XOR in place (dst ^= src) and returns dst.
 func xor(dst, src []byte) []byte {
 	l := len(dst)
 	if len(src) < l {

@@ -12,22 +12,33 @@ import (
 
 // Garbler drives the garbling side (party A) of the protocol.
 type Garbler struct {
-	rand          io.Reader
-	circ          *circuit.Circuit
-	curve         elliptic.Curve
-	garblerBits   int
+	// rand yields randomness for garbling and OT.
+	rand io.Reader
+	// circ stores the shared computation circuit.
+	circ *circuit.Circuit
+	// curve selects the OT elliptic curve.
+	curve elliptic.Curve
+	// garblerBits counts the garbler's private input bits.
+	garblerBits int
+	// evaluatorBits counts the evaluator's private input bits.
 	evaluatorBits int
 
-	garbled   *circuit.Garbled
-	key       [32]byte
-	otState   *otSenderState
+	// garbled caches the latest garbled circuit.
+	garbled *circuit.Garbled
+	// key stores the AES garbling key.
+	key [32]byte
+	// otState keeps the pending OT sender state.
+	otState *otSenderState
+	// completed tracks whether Finalize was invoked.
 	completed bool
 }
 
 // NewGarbler constructs a garbler session with the provided config.
 func NewGarbler(cfg *Config) (*Garbler, error) {
-	loader := cfg.loader()
-	circ, err := loader()
+	if cfg == nil {
+		cfg = &Config{}
+	}
+	circ, err := loadSHA256XORCircuit()
 	if err != nil {
 		return nil, err
 	}

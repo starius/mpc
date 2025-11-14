@@ -12,23 +12,35 @@ import (
 
 // Evaluator drives the evaluator side (party B) of the protocol.
 type Evaluator struct {
-	rand          io.Reader
-	circ          *circuit.Circuit
-	curve         elliptic.Curve
-	garblerBits   int
+	// rand yields randomness for OT choices.
+	rand io.Reader
+	// circ stores the shared computation circuit.
+	circ *circuit.Circuit
+	// curve selects the OT elliptic curve.
+	curve elliptic.Curve
+	// garblerBits counts the garbler's input bits.
+	garblerBits int
+	// evaluatorBits counts the evaluator's input bits.
 	evaluatorBits int
 
-	key         [32]byte
-	garbled     [][]ot.Label
-	wires       []ot.Label
+	// key stores the AES garbling key.
+	key [32]byte
+	// garbled caches the received gate tables.
+	garbled [][]ot.Label
+	// wires holds the evaluator's running wire labels.
+	wires []ot.Label
+	// outputHints stores the garbler's output label pairs.
 	outputHints []ot.Wire
-	receiver    *otReceiverState
+	// receiver keeps the active OT receiver state.
+	receiver *otReceiverState
 }
 
 // NewEvaluator constructs an evaluator session with the provided config.
 func NewEvaluator(cfg *Config) (*Evaluator, error) {
-	loader := cfg.loader()
-	circ, err := loader()
+	if cfg == nil {
+		cfg = &Config{}
+	}
+	circ, err := loadSHA256XORCircuit()
 	if err != nil {
 		return nil, err
 	}

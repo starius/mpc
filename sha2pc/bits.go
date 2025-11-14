@@ -1,12 +1,13 @@
 package sha2pc
 
-// xorBytes returns a^b byte slice of equal length.
+// xorBytes applies XOR in place between dst and src (dst ^= src).
 func xorBytes(dst, src []byte) {
 	for i := range dst {
 		dst[i] ^= src[i]
 	}
 }
 
+// bytesToBitsLittle converts a byte slice into a little-endian bit slice.
 func bytesToBitsLittle(data []byte) []bool {
 	bits := make([]bool, len(data)*8)
 	for idx, b := range data {
@@ -19,6 +20,7 @@ func bytesToBitsLittle(data []byte) []bool {
 	return bits
 }
 
+// bitsToBytesLittle packs a bit slice back into bytes using little-endian order.
 func bitsToBytesLittle(bits []bool) []byte {
 	size := (len(bits) + 7) / 8
 	result := make([]byte, size)
