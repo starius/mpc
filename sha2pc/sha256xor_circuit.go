@@ -12,7 +12,11 @@ import (
 //go:embed sha256xor.mpclc
 var sha256xorCircuitBlob []byte
 
-// loadSHA256XORCircuit parses the embedded circuit blob into a Circuit.
-func loadSHA256XORCircuit() (*circuit.Circuit, error) {
-	return circuit.ParseMPCLC(bytes.NewReader(sha256xorCircuitBlob))
-}
+// sha256xorCircuit holds the parsed circuit singleton.
+var sha256xorCircuit = func() *circuit.Circuit {
+	circ, err := circuit.ParseMPCLC(bytes.NewReader(sha256xorCircuitBlob))
+	if err != nil {
+		panic(err)
+	}
+	return circ
+}()

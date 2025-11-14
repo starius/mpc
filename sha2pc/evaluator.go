@@ -48,10 +48,7 @@ func NewEvaluator(cfg *Config) (*Evaluator, error) {
 	if cfg == nil {
 		cfg = &Config{}
 	}
-	circ, err := loadSHA256XORCircuit()
-	if err != nil {
-		return nil, err
-	}
+	circ := sha256xorCircuit
 	if circ.NumParties() != 2 {
 		return nil, fmt.Errorf("expected 2-party circuit, got %d", circ.NumParties())
 	}
