@@ -13,7 +13,7 @@
 //		b[i] = byte(len(a) - i)
 //	}
 //
-//	msg1, garblerState, err := sha2pc.GarblerRound1(crand.Reader, sha2pc.CurveP256, a)
+//	msg1, garblerState, err := sha2pc.GarblerRound1(crand.Reader, sha2pc.CurveP256)
 //	if err != nil {
 //		log.Fatal(err)
 //	}
@@ -21,7 +21,7 @@
 //	if err != nil {
 //		log.Fatal(err)
 //	}
-//	msg3, err := sha2pc.GarblerRound3(garblerState, sha2pc.CurveP256, msg2)
+//	msg3, err := sha2pc.GarblerRound3(crand.Reader, sha2pc.CurveP256, garblerState, a, msg2)
 //	if err != nil {
 //		log.Fatal(err)
 //	}

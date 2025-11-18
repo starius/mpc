@@ -12,7 +12,7 @@ transport they like (sockets, gRPC, files, etc.).
 package main
 
 import (
-	"crypto/rand"
+	crand "crypto/rand"
 	"fmt"
 	"log"
 
@@ -26,23 +26,23 @@ func main() {
 		b[i] = byte(len(a) - i)
 	}
 
-	msg1, gState, err := sha2pc.GarblerRound1(rand.Reader, sha2pc.CurveP256, a)
+	msg1, gState, err := sha2pc.GarblerRound1(crand.Reader, sha2pc.CurveP256)
 	if err != nil {
 		log.Fatalf("round1: %v", err)
 	}
-	fmt.Printf("Round1: tables=%d outputs=%d\n", len(msg1.GarbledTables), len(msg1.OutputHints))
+	fmt.Printf("Round1: curve=%s\n", msg1.OT.CurveName)
 
-	msg2, eState, err := sha2pc.EvaluatorRound2(rand.Reader, sha2pc.CurveP256, msg1, b)
+	msg2, eState, err := sha2pc.EvaluatorRound2(crand.Reader, sha2pc.CurveP256, msg1, b)
 	if err != nil {
 		log.Fatalf("round2: %v", err)
 	}
 	fmt.Printf("Round2: choices=%d\n", len(msg2.Choices))
 
-	msg3, err := sha2pc.GarblerRound3(gState, sha2pc.CurveP256, msg2)
+	msg3, err := sha2pc.GarblerRound3(crand.Reader, sha2pc.CurveP256, gState, a, msg2)
 	if err != nil {
 		log.Fatalf("round3: %v", err)
 	}
-	fmt.Printf("Round3: ciphertexts=%d\n", len(msg3.Ciphertexts))
+	fmt.Printf("Round3: ciphertexts=%d tables=%d\n", len(msg3.Ciphertexts), len(msg3.GarbledTables))
 
 	hashEval, err := sha2pc.EvaluatorRound4(sha2pc.CurveP256, eState, msg3)
 	if err != nil {

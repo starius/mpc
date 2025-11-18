@@ -8,8 +8,6 @@ import (
 	"encoding/hex"
 	mrand "math/rand"
 	"testing"
-
-	"github.com/markkurossi/mpc/ot"
 )
 
 // TestProtocolDeterministic exercises the protocol with fixed vectors.
@@ -42,7 +40,7 @@ func TestProtocolRandomized(t *testing.T) {
 func runProtocol(t *testing.T, a, b [32]byte) {
 	t.Helper()
 
-	msg1, garblerState, err := GarblerRound1(crand.Reader, CurveP256, a)
+	msg1, garblerState, err := GarblerRound1(crand.Reader, CurveP256)
 	if err != nil {
 		t.Fatalf("Round1: %v", err)
 	}
@@ -51,32 +49,9 @@ func runProtocol(t *testing.T, a, b [32]byte) {
 		t.Fatalf("Round2: %v", err)
 	}
 
-	wantHints := msg1.OutputHints
-	if len(wantHints) != len(evaluatorState.outputHints) {
-		t.Fatalf("output hint count mismatch: got %d want %d",
-			len(evaluatorState.outputHints), len(wantHints))
-	}
-	for i := range wantHints {
-		if !evaluatorState.outputHints[i].L0.Equal(wantHints[i].L0) ||
-			!evaluatorState.outputHints[i].L1.Equal(wantHints[i].L1) {
-			t.Fatalf("output hint mismatch at %d", i)
-		}
-	}
-
-	msg3, err := GarblerRound3(garblerState, CurveP256, msg2)
+	msg3, err := GarblerRound3(crand.Reader, CurveP256, garblerState, a, msg2)
 	if err != nil {
 		t.Fatalf("Round3: %v", err)
-	}
-
-	labels, err := ot.DecryptCOCiphertexts(CurveP256, evaluatorState.choiceBundle, msg3.Ciphertexts)
-	if err != nil {
-		t.Fatalf("decrypt: %v", err)
-	}
-	for i := 0; i < len(labels); i++ {
-		want := garblerState.wires[i]
-		if !labels[i].Equal(want.L0) && !labels[i].Equal(want.L1) {
-			t.Fatalf("OT label mismatch at %d", i)
-		}
 	}
 
 	hashEval, err := EvaluatorRound4(CurveP256, evaluatorState, msg3)
@@ -96,7 +71,8 @@ func runProtocol(t *testing.T, a, b [32]byte) {
 
 // TestDeterministicTranscript locks the transcript against known hashes.
 func TestDeterministicTranscript(t *testing.T) {
-	garblerRand := newDeterministicReader([]byte("garbler-seed"))
+	garblerRound1Rand := newDeterministicReader([]byte("garbler-round1"))
+	garblerRound3Rand := newDeterministicReader([]byte("garbler-round3"))
 	evaluatorRand := newDeterministicReader([]byte("evaluator-seed"))
 
 	var a, b [32]byte
@@ -105,7 +81,7 @@ func TestDeterministicTranscript(t *testing.T) {
 		b[i] = byte(len(a) - i)
 	}
 
-	r1, gState, err := GarblerRound1(garblerRand, CurveP256, a)
+	r1, gState, err := GarblerRound1(garblerRound1Rand, CurveP256)
 	if err != nil {
 		t.Fatalf("GarblerRound1: %v", err)
 	}
@@ -113,7 +89,7 @@ func TestDeterministicTranscript(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EvaluatorRound2: %v", err)
 	}
-	r3, err := GarblerRound3(gState, CurveP256, r2)
+	r3, err := GarblerRound3(garblerRound3Rand, CurveP256, gState, a, r2)
 	if err != nil {
 		t.Fatalf("GarblerRound3: %v", err)
 	}
@@ -141,9 +117,9 @@ func TestDeterministicTranscript(t *testing.T) {
 	finalHash := hex.EncodeToString(final[:])
 
 	const (
-		expRound1 = "2ab2262c373bdaff5fbe7ddd96d1bc2e5d44a677749ed9602759ce5967a18d55"
-		expRound2 = "4d0f38de45cadc986f127a85843118d65a3f6da9e7ea187672a14711c63524b5"
-		expRound3 = "351b4d259c79a84f7d7b3ca64f708e2410324b2969dbffb2870f6893dd4dba05"
+		expRound1 = "1e95f7a3a56cb202b75199712da90714a257145fcca74d2477579f07060b5444"
+		expRound2 = "b27ec662ea58e1e66468b86b5bfdcfe7cd98cb8982e38cd777078ca4e4904640"
+		expRound3 = "3c7aaa2897f21d919d8935427e057038dc965396e6edec87afba102e954ca89c"
 		expFinal  = "4b2f74579fc7c778745121996f604371a326dc5174f9851706032626668abf2e"
 	)
 
@@ -157,8 +133,10 @@ func TestDeterministicTranscript(t *testing.T) {
 // rerunning them with the same inputs, hashing payloads/sessions, and verifying
 // encode/decode round-trips remain stable.
 func TestSessionIdempotency(t *testing.T) {
-	garblerRandA := newDeterministicReader([]byte("garbler-idem"))
-	garblerRandB := newDeterministicReader([]byte("garbler-idem"))
+	garblerRound1RandA := newDeterministicReader([]byte("garbler-r1-idem"))
+	garblerRound1RandB := newDeterministicReader([]byte("garbler-r1-idem"))
+	garblerRound3RandA := newDeterministicReader([]byte("garbler-r3-idem"))
+	garblerRound3RandB := newDeterministicReader([]byte("garbler-r3-idem"))
 	evaluatorRandA := newDeterministicReader([]byte("eval-idem"))
 	evaluatorRandB := newDeterministicReader([]byte("eval-idem"))
 
@@ -170,11 +148,11 @@ func TestSessionIdempotency(t *testing.T) {
 	aCopy := a
 	bCopy := b
 
-	round1A, garblerSessionA, err := GarblerRound1(garblerRandA, CurveP256, a)
+	round1A, garblerSessionA, err := GarblerRound1(garblerRound1RandA, CurveP256)
 	if err != nil {
 		t.Fatalf("GarblerRound1 A: %v", err)
 	}
-	round1B, garblerSessionB, err := GarblerRound1(garblerRandB, CurveP256, a)
+	round1B, garblerSessionB, err := GarblerRound1(garblerRound1RandB, CurveP256)
 	if err != nil {
 		t.Fatalf("GarblerRound1 B: %v", err)
 	}
@@ -185,10 +163,6 @@ func TestSessionIdempotency(t *testing.T) {
 	if !garblerSessionsEqual(garblerSessionA, garblerSessionB) {
 		t.Fatalf("garbler sessions diverged")
 	}
-	if a != aCopy {
-		t.Fatalf("garbler input mutated")
-	}
-
 	garblerBytes, err := EncodeGarblerSession(garblerSessionA)
 	if err != nil {
 		t.Fatalf("EncodeGarblerSession: %v", err)
@@ -231,16 +205,19 @@ func TestSessionIdempotency(t *testing.T) {
 		t.Fatalf("evaluator session encode round-trip mismatch")
 	}
 
-	round3A, err := GarblerRound3(garblerSessionA, CurveP256, round2A)
+	round3A, err := GarblerRound3(garblerRound3RandA, CurveP256, garblerSessionA, a, round2A)
 	if err != nil {
 		t.Fatalf("GarblerRound3 A: %v", err)
 	}
-	round3B, err := GarblerRound3(garblerSessionA, CurveP256, round2A)
+	round3B, err := GarblerRound3(garblerRound3RandB, CurveP256, garblerSessionA, a, round2A)
 	if err != nil {
 		t.Fatalf("GarblerRound3 B: %v", err)
 	}
 	if !round3Equal(round3A, round3B) {
 		t.Fatalf("round3 payloads diverged")
+	}
+	if a != aCopy {
+		t.Fatalf("garbler input mutated")
 	}
 
 	finalA, err := EvaluatorRound4(CurveP256, evaluatorSessionA, round3A)
@@ -275,11 +252,11 @@ func TestSessionIdempotency(t *testing.T) {
 	finalHash := hex.EncodeToString(finalA[:])
 
 	const (
-		idemRound1Hash           = "9accce419f14e94307c6bc679bae25b516a80541ae07c1730acbcef4e0ee0d4a"
-		idemRound2Hash           = "c019506d180ca597c42ef9157b76f91c95206c37dd90167b08c193c3f7d7a825"
-		idemRound3Hash           = "850f1db0433c936029c0d9f479e75cd2e252dd327aed4b775fd3a8efeeb9558b"
-		idemGarblerSessionHash   = "cc2d7a6c349dcaa0bfa42f38f7de0b30eac841e344f524b5a3b65a9127c34f31"
-		idemEvaluatorSessionHash = "ccbb133d218324617d2fc312415e30252aad14356a66a57008742a1896122779"
+		idemRound1Hash           = "0d070317eccb50f5ab460c20ea035672ab9f4ce11783c2bcc98903bfa7983cee"
+		idemRound2Hash           = "3c869e036cfb5803f2df8a112e00910aa9837a424aa1e30bb5d901fec04d3a37"
+		idemRound3Hash           = "bef0bf40cbdb420b0460d71e22cbbcae799546ea50882b3ffefd502e021fe534"
+		idemGarblerSessionHash   = "00cbbd44b8bb74d4fe9ac921c17870d5d53ab0e240ea196d5203d468a64bb767"
+		idemEvaluatorSessionHash = "b4a0c8b2a113ec38747d5d583e96446a27fa6f9dda9e74d50fe53cb1118488cf"
 		idemFinalHash            = "4b2f74579fc7c778745121996f604371a326dc5174f9851706032626668abf2e"
 	)
 
@@ -306,17 +283,20 @@ func TestSessionIdempotency(t *testing.T) {
 // TestNilRandomSource ensures public APIs fail when rng is nil.
 func TestNilRandomSource(t *testing.T) {
 	var input [32]byte
-	if _, _, err := GarblerRound1(nil, CurveP256, input); err != errNilRandomSource {
+	if _, _, err := GarblerRound1(nil, CurveP256); err != errNilRandomSource {
 		t.Fatalf("expected errNilRandomSource, got %v", err)
 	}
 
 	garblerRand := newDeterministicReader([]byte("garbler"))
-	msg1, _, err := GarblerRound1(garblerRand, CurveP256, input)
+	msg1, garblerState, err := GarblerRound1(garblerRand, CurveP256)
 	if err != nil {
 		t.Fatalf("setup GarblerRound1: %v", err)
 	}
 	if _, _, err := EvaluatorRound2(nil, CurveP256, msg1, input); err != errNilRandomSource {
 		t.Fatalf("expected errNilRandomSource from EvaluatorRound2, got %v", err)
+	}
+	if _, err := GarblerRound3(nil, CurveP256, garblerState, input, Round2Payload{}); err != errNilRandomSource {
+		t.Fatalf("expected errNilRandomSource from GarblerRound3, got %v", err)
 	}
 }
 

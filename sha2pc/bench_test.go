@@ -14,7 +14,7 @@ func BenchmarkProtocol(b *testing.B) {
 	}
 
 	for b.Loop() {
-		msg1, gState, err := GarblerRound1(crand.Reader, CurveP256, aIn)
+		msg1, gState, err := GarblerRound1(crand.Reader, CurveP256)
 		if err != nil {
 			b.Fatalf("Round1: %v", err)
 		}
@@ -22,7 +22,7 @@ func BenchmarkProtocol(b *testing.B) {
 		if err != nil {
 			b.Fatalf("Round2: %v", err)
 		}
-		msg3, err := GarblerRound3(gState, CurveP256, msg2)
+		msg3, err := GarblerRound3(crand.Reader, CurveP256, gState, aIn, msg2)
 		if err != nil {
 			b.Fatalf("Round3: %v", err)
 		}

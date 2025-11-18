@@ -14,10 +14,6 @@ import (
 // It is produced by EvaluatorRound2, consumed in EvaluatorRound4, and can be
 // persisted and restored without additional mutation.
 type EvaluatorSession struct {
-	key          [32]byte
-	garbled      [][]ot.Label
-	outputHints  []ot.Wire
-	wires        []ot.Label
 	choiceBundle ot.COChoiceBundle
 }
 
@@ -40,12 +36,6 @@ func EvaluatorRound2(rng io.Reader, curve elliptic.Curve, msg Round1Payload, pre
 		return Round2Payload{}, nil, fmt.Errorf("curve mismatch: %s vs %s",
 			msg.OT.CurveName, curve.Params().Name)
 	}
-	state.key = msg.Key
-	state.garbled = msg.GarbledTables
-	state.outputHints = msg.OutputHints
-	state.wires = make([]ot.Label, circ.NumWires)
-	copy(state.wires[:hashInputBitCount], msg.GarblerInputs)
-
 	bits := bytesToBitsLittle(preimagePart[:])
 	if len(bits) != hashInputBitCount {
 		return Round2Payload{}, nil, fmt.Errorf("evaluator input mismatch: got %d bits want %d",
@@ -75,23 +65,24 @@ func EvaluatorRound4(curve elliptic.Curve, state *EvaluatorSession, msg Round3Pa
 	if err != nil {
 		return digest, err
 	}
-	wires := make([]ot.Label, len(state.wires))
-	copy(wires, state.wires)
+	totalWires := int(sha256xorCircuit.NumWires)
+	wires := make([]ot.Label, totalWires)
+	copy(wires[:hashInputBitCount], msg.GarblerInputs)
 	copy(wires[hashInputBitCount:], labels)
 
-	if err := sha256xorCircuit.Eval(state.key[:], wires, state.garbled); err != nil {
+	if err := sha256xorCircuit.Eval(msg.Key[:], wires, msg.GarbledTables); err != nil {
 		return digest, err
 	}
 
-	if len(state.outputHints) != sha256xorCircuit.Outputs.Size() {
+	if len(msg.OutputHints) != sha256xorCircuit.Outputs.Size() {
 		return digest, fmt.Errorf("output hint mismatch: have %d want %d",
-			len(state.outputHints), sha256xorCircuit.Outputs.Size())
+			len(msg.OutputHints), sha256xorCircuit.Outputs.Size())
 	}
 
-	start := sha256xorCircuit.NumWires - len(state.outputHints)
-	outputBits := make([]bool, len(state.outputHints))
-	for i := 0; i < len(state.outputHints); i++ {
-		bit, err := circuit.BitFromLabel(state.outputHints[i], wires[start+i])
+	start := sha256xorCircuit.NumWires - len(msg.OutputHints)
+	outputBits := make([]bool, len(msg.OutputHints))
+	for i := 0; i < len(msg.OutputHints); i++ {
+		bit, err := circuit.BitFromLabel(msg.OutputHints[i], wires[start+i])
 		if err != nil {
 			return digest, err
 		}

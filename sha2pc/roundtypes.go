@@ -4,18 +4,6 @@ import "github.com/markkurossi/mpc/ot"
 
 // Round1Payload carries everything the garbler sends in round 1.
 type Round1Payload struct {
-	// Key is the 32-byte AES garbling key.
-	Key [32]byte
-
-	// GarbledTables holds every gate's ciphertext row.
-	GarbledTables [][]ot.Label
-
-	// GarblerInputs contains the garbler's input wire labels.
-	GarblerInputs []ot.Label
-
-	// OutputHints lists both labels for each output wire.
-	OutputHints []ot.Wire
-
 	// OT contains the OT sender setup information.
 	OT OTSenderSetup
 }
@@ -39,4 +27,16 @@ type Round2Payload struct {
 type Round3Payload struct {
 	// Ciphertexts contains two encrypted labels per input bit.
 	Ciphertexts []ot.LabelCiphertext
+
+	// Key is the 32-byte AES garbling key.
+	Key [32]byte
+
+	// GarbledTables holds every gate's ciphertext row.
+	GarbledTables [][]ot.Label
+
+	// GarblerInputs contains the garbler's input wire labels.
+	GarblerInputs []ot.Label
+
+	// OutputHints lists both labels for each output wire.
+	OutputHints []ot.Wire
 }

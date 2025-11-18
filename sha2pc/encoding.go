@@ -33,10 +33,6 @@ var byteOrder = binary.BigEndian
 func EncodeRound1(p Round1Payload) ([]byte, error) {
 	var buf bytes.Buffer
 	buf.Write([]byte(magicRound1))
-	buf.Write(p.Key[:])
-	writeChunk(&buf, encodeGarbledTables(p.GarbledTables))
-	writeChunk(&buf, encodeLabels(p.GarblerInputs))
-	writeChunk(&buf, encodeOutputHints(p.OutputHints))
 	writeChunk(&buf, encodeOTSetup(p.OT))
 
 	return buf.Bytes(), nil
@@ -53,34 +49,7 @@ func DecodeRound1(data []byte) (Round1Payload, error) {
 	if string(magic) != magicRound1 {
 		return Round1Payload{}, fmt.Errorf("invalid round1 magic")
 	}
-	if _, err := io.ReadFull(reader, payload.Key[:]); err != nil {
-		return Round1Payload{}, err
-	}
 	chunk, err := readChunk(reader)
-	if err != nil {
-		return Round1Payload{}, err
-	}
-	payload.GarbledTables, err = decodeGarbledTables(chunk)
-	if err != nil {
-		return Round1Payload{}, err
-	}
-	chunk, err = readChunk(reader)
-	if err != nil {
-		return Round1Payload{}, err
-	}
-	payload.GarblerInputs, err = decodeLabels(chunk)
-	if err != nil {
-		return Round1Payload{}, err
-	}
-	chunk, err = readChunk(reader)
-	if err != nil {
-		return Round1Payload{}, err
-	}
-	payload.OutputHints, err = decodeOutputHints(chunk)
-	if err != nil {
-		return Round1Payload{}, err
-	}
-	chunk, err = readChunk(reader)
 	if err != nil {
 		return Round1Payload{}, err
 	}
@@ -129,9 +98,63 @@ func DecodeRound2(data []byte) (Round2Payload, error) {
 func EncodeRound3(p Round3Payload) ([]byte, error) {
 	var buf bytes.Buffer
 	buf.Write([]byte(magicRound3))
-	buf.Write(encodeCiphertexts(p.Ciphertexts))
+	buf.Write(p.Key[:])
+	writeChunk(&buf, encodeGarbledTables(p.GarbledTables))
+	writeChunk(&buf, encodeLabels(p.GarblerInputs))
+	writeChunk(&buf, encodeOutputHints(p.OutputHints))
+	writeChunk(&buf, encodeCiphertexts(p.Ciphertexts))
 
 	return buf.Bytes(), nil
+}
+
+// DecodeRound3 reconstructs a Round3Payload from bytes.
+func DecodeRound3(data []byte) (Round3Payload, error) {
+	reader := bytes.NewReader(data)
+	var payload Round3Payload
+	magic := make([]byte, 2)
+	if _, err := io.ReadFull(reader, magic); err != nil {
+		return Round3Payload{}, err
+	}
+	if string(magic) != magicRound3 {
+		return Round3Payload{}, fmt.Errorf("invalid round3 magic")
+	}
+	if _, err := io.ReadFull(reader, payload.Key[:]); err != nil {
+		return Round3Payload{}, err
+	}
+	chunk, err := readChunk(reader)
+	if err != nil {
+		return Round3Payload{}, err
+	}
+	payload.GarbledTables, err = decodeGarbledTables(chunk)
+	if err != nil {
+		return Round3Payload{}, err
+	}
+	chunk, err = readChunk(reader)
+	if err != nil {
+		return Round3Payload{}, err
+	}
+	payload.GarblerInputs, err = decodeLabels(chunk)
+	if err != nil {
+		return Round3Payload{}, err
+	}
+	chunk, err = readChunk(reader)
+	if err != nil {
+		return Round3Payload{}, err
+	}
+	payload.OutputHints, err = decodeOutputHints(chunk)
+	if err != nil {
+		return Round3Payload{}, err
+	}
+	chunk, err = readChunk(reader)
+	if err != nil {
+		return Round3Payload{}, err
+	}
+	payload.Ciphertexts, err = decodeCiphertexts(chunk)
+	if err != nil {
+		return Round3Payload{}, err
+	}
+
+	return payload, nil
 }
 
 // EncodeGarblerSession serializes a GarblerSession for persistence.
@@ -142,9 +165,7 @@ func EncodeGarblerSession(session *GarblerSession) ([]byte, error) {
 
 	var buf bytes.Buffer
 	buf.Write([]byte(magicGarblerSession))
-	buf.Write(session.key[:])
 	writeChunk(&buf, encodeCOSenderSetup(session.senderSetup))
-	writeChunk(&buf, encodeOutputHints(session.wires))
 
 	return buf.Bytes(), nil
 }
@@ -161,24 +182,11 @@ func DecodeGarblerSession(data []byte) (*GarblerSession, error) {
 		return nil, fmt.Errorf("invalid garbler session magic")
 	}
 
-	if _, err := io.ReadFull(reader, session.key[:]); err != nil {
-		return nil, err
-	}
-
 	chunk, err := readChunk(reader)
 	if err != nil {
 		return nil, err
 	}
 	session.senderSetup, err = decodeCOSenderSetup(chunk)
-	if err != nil {
-		return nil, err
-	}
-
-	chunk, err = readChunk(reader)
-	if err != nil {
-		return nil, err
-	}
-	session.wires, err = decodeOutputHints(chunk)
 	if err != nil {
 		return nil, err
 	}
@@ -194,10 +202,6 @@ func EncodeEvaluatorSession(session *EvaluatorSession) ([]byte, error) {
 
 	var buf bytes.Buffer
 	buf.Write([]byte(magicEvalSession))
-	buf.Write(session.key[:])
-	writeChunk(&buf, encodeGarbledTables(session.garbled))
-	writeChunk(&buf, encodeOutputHints(session.outputHints))
-	writeChunk(&buf, encodeLabels(session.wires))
 	writeChunk(&buf, encodeChoiceBundle(session.choiceBundle))
 
 	return buf.Bytes(), nil
@@ -216,38 +220,7 @@ func DecodeEvaluatorSession(data []byte) (*EvaluatorSession, error) {
 		return nil, fmt.Errorf("invalid evaluator session magic")
 	}
 
-	if _, err := io.ReadFull(reader, session.key[:]); err != nil {
-		return nil, err
-	}
-
 	chunk, err := readChunk(reader)
-	if err != nil {
-		return nil, err
-	}
-	session.garbled, err = decodeGarbledTables(chunk)
-	if err != nil {
-		return nil, err
-	}
-
-	chunk, err = readChunk(reader)
-	if err != nil {
-		return nil, err
-	}
-	session.outputHints, err = decodeOutputHints(chunk)
-	if err != nil {
-		return nil, err
-	}
-
-	chunk, err = readChunk(reader)
-	if err != nil {
-		return nil, err
-	}
-	session.wires, err = decodeLabels(chunk)
-	if err != nil {
-		return nil, err
-	}
-
-	chunk, err = readChunk(reader)
 	if err != nil {
 		return nil, err
 	}
@@ -257,28 +230,6 @@ func DecodeEvaluatorSession(data []byte) (*EvaluatorSession, error) {
 	}
 
 	return &session, nil
-}
-
-// DecodeRound3 reconstructs a Round3Payload.
-func DecodeRound3(data []byte) (Round3Payload, error) {
-	reader := bytes.NewReader(data)
-	magic := make([]byte, 2)
-	if _, err := io.ReadFull(reader, magic); err != nil {
-		return Round3Payload{}, err
-	}
-	if string(magic) != magicRound3 {
-		return Round3Payload{}, fmt.Errorf("invalid round3 magic")
-	}
-	remaining, err := io.ReadAll(reader)
-	if err != nil {
-		return Round3Payload{}, err
-	}
-	ct, err := decodeCiphertexts(remaining)
-	if err != nil {
-		return Round3Payload{}, err
-	}
-
-	return Round3Payload{Ciphertexts: ct}, nil
 }
 
 // encodeLabels flattens all labels into raw bytes.

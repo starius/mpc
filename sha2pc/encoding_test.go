@@ -46,18 +46,7 @@ func TestRound2Encoding(t *testing.T) {
 
 // TestRound3Encoding ensures Round3 payload encoding is lossless.
 func TestRound3Encoding(t *testing.T) {
-	payload := Round3Payload{
-		Ciphertexts: []ot.LabelCiphertext{
-			{
-				Zero: newLabelData(1),
-				One:  newLabelData(2),
-			},
-			{
-				Zero: newLabelData(3),
-				One:  newLabelData(4),
-			},
-		},
-	}
+	payload := sampleRound3()
 	data, err := EncodeRound3(payload)
 	if err != nil {
 		t.Fatalf("encodeRound3: %v", err)
@@ -105,29 +94,39 @@ func TestEvaluatorSessionEncoding(t *testing.T) {
 
 // sampleRound1 builds a small Round1Payload used in tests.
 func sampleRound1() Round1Payload {
-	var key [32]byte
-	for i := 0; i < len(key); i++ {
-		key[i] = byte(i)
-	}
-
 	return Round1Payload{
-		Key: key,
-		GarbledTables: [][]ot.Label{
-			{sampleLabel(1), sampleLabel(2)},
-			nil,
-			{sampleLabel(3)},
-		},
-		GarblerInputs: []ot.Label{sampleLabel(10), sampleLabel(11)},
-		OutputHints: []ot.Wire{
-			{L0: sampleLabel(20), L1: sampleLabel(21)},
-			{L0: sampleLabel(22), L1: sampleLabel(23)},
-		},
 		OT: OTSenderSetup{
 			CurveName: "P-256",
 			A: ot.ECPoint{
 				X: big.NewInt(123),
 				Y: big.NewInt(456),
 			},
+		},
+	}
+}
+
+// sampleRound3 builds a representative Round3 payload for tests.
+func sampleRound3() Round3Payload {
+	var key [32]byte
+	for i := range key {
+		key[i] = byte(i)
+	}
+
+	return Round3Payload{
+		Ciphertexts: []ot.LabelCiphertext{
+			{Zero: newLabelData(1), One: newLabelData(2)},
+			{Zero: newLabelData(3), One: newLabelData(4)},
+		},
+		Key: key,
+		GarbledTables: [][]ot.Label{
+			{sampleLabel(10), sampleLabel(11)},
+			{sampleLabel(12)},
+		},
+		GarblerInputs: []ot.Label{
+			sampleLabel(20), sampleLabel(21),
+		},
+		OutputHints: []ot.Wire{
+			{L0: sampleLabel(30), L1: sampleLabel(31)},
 		},
 	}
 }
@@ -152,19 +151,6 @@ func newLabelData(seed byte) ot.LabelData {
 
 // round1Equal compares two Round1Payloads.
 func round1Equal(a, b Round1Payload) bool {
-	if a.Key != b.Key {
-		return false
-	}
-	if !tablesEqual(a.GarbledTables, b.GarbledTables) {
-		return false
-	}
-	if !labelsEqual(a.GarblerInputs, b.GarblerInputs) {
-		return false
-	}
-	if !wiresEqual(a.OutputHints, b.OutputHints) {
-		return false
-	}
-
 	return otSetupEqual(a.OT, b.OT)
 }
 
@@ -239,6 +225,14 @@ func round2Equal(a, b Round2Payload) bool {
 
 // round3Equal compares Round3 payloads.
 func round3Equal(a, b Round3Payload) bool {
+	if a.Key != b.Key {
+		return false
+	}
+	if !labelsEqual(a.GarblerInputs, b.GarblerInputs) ||
+		!tablesEqual(a.GarbledTables, b.GarbledTables) ||
+		!wiresEqual(a.OutputHints, b.OutputHints) {
+		return false
+	}
 	if len(a.Ciphertexts) != len(b.Ciphertexts) {
 		return false
 	}
@@ -254,13 +248,7 @@ func round3Equal(a, b Round3Payload) bool {
 
 // sampleGarblerSession builds a representative GarblerSession for tests.
 func sampleGarblerSession() *GarblerSession {
-	var key [32]byte
-	for i := range key {
-		key[i] = byte(i + 1)
-	}
-
 	return &GarblerSession{
-		key: key,
 		senderSetup: ot.COSenderSetup{
 			CurveName: "P-256",
 			Scalar:    big.NewInt(3),
@@ -269,30 +257,12 @@ func sampleGarblerSession() *GarblerSession {
 			AaInvX:    big.NewInt(11),
 			AaInvY:    big.NewInt(13),
 		},
-		wires: []ot.Wire{
-			{L0: sampleLabel(30), L1: sampleLabel(31)},
-			{L0: sampleLabel(32), L1: sampleLabel(33)},
-		},
 	}
 }
 
 // sampleEvaluatorSession builds a representative EvaluatorSession for tests.
 func sampleEvaluatorSession() *EvaluatorSession {
-	var key [32]byte
-	for i := range key {
-		key[i] = byte(2*i + 1)
-	}
-
 	return &EvaluatorSession{
-		key: key,
-		garbled: [][]ot.Label{
-			{sampleLabel(40)},
-			{sampleLabel(41), sampleLabel(42)},
-		},
-		outputHints: []ot.Wire{
-			{L0: sampleLabel(50), L1: sampleLabel(51)},
-		},
-		wires: []ot.Label{sampleLabel(60), sampleLabel(61)},
 		choiceBundle: ot.COChoiceBundle{
 			CurveName: "P-256",
 			Ax:        big.NewInt(17),
@@ -311,14 +281,7 @@ func garblerSessionsEqual(a, b *GarblerSession) bool {
 	if a == nil || b == nil {
 		return a == b
 	}
-	if a.key != b.key {
-		return false
-	}
-	if !cosenderEqual(a.senderSetup, b.senderSetup) {
-		return false
-	}
-
-	return wiresEqual(a.wires, b.wires)
+	return cosenderEqual(a.senderSetup, b.senderSetup)
 }
 
 // evaluatorSessionsEqual compares two evaluator sessions.
@@ -326,19 +289,6 @@ func evaluatorSessionsEqual(a, b *EvaluatorSession) bool {
 	if a == nil || b == nil {
 		return a == b
 	}
-	if a.key != b.key {
-		return false
-	}
-	if !tablesEqual(a.garbled, b.garbled) {
-		return false
-	}
-	if !wiresEqual(a.outputHints, b.outputHints) {
-		return false
-	}
-	if !labelsEqual(a.wires, b.wires) {
-		return false
-	}
-
 	return choiceBundlesEqual(a.choiceBundle, b.choiceBundle)
 }
 
