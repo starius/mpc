@@ -28,7 +28,7 @@ func EvaluatorRound2(rng io.Reader, curve elliptic.Curve, msg Round1Payload, pre
 		return Round2Payload{}, nil, errNilRandomSource
 	}
 	if curve == nil {
-		return Round2Payload{}, nil, fmt.Errorf("nil curve")
+		return Round2Payload{}, nil, errNilCurve
 	}
 	circ := sha256xorCircuit
 	if circ.NumParties() != 2 {
@@ -68,7 +68,7 @@ func EvaluatorRound4(curve elliptic.Curve, state *EvaluatorSession, msg Round3Pa
 		return digest, fmt.Errorf("invalid evaluator state for round 4")
 	}
 	if curve == nil {
-		return digest, fmt.Errorf("nil curve")
+		return digest, errNilCurve
 	}
 	labels, err := ot.DecryptCOCiphertexts(curve, state.choiceBundle, msg.Ciphertexts)
 	if err != nil {

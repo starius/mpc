@@ -15,6 +15,9 @@ import (
 // errNilRandomSource indicates that a required randomness source was nil.
 var errNilRandomSource = errors.New("sha2pc: randomness source must not be nil")
 
+// errNilCurve indicates that a required elliptic curve was nil.
+var errNilCurve = errors.New("sha2pc: elliptic curve must not be nil")
+
 // GarblerSession captures the immutable garbler-side context between rounds.
 // It is produced by GarblerRound1, consumed in GarblerRound3, and can be
 // persisted and restored without additional mutation.
@@ -33,7 +36,7 @@ func GarblerRound1(rng io.Reader, curve elliptic.Curve, preimagePart [sha256.Siz
 		return Round1Payload{}, nil, errNilRandomSource
 	}
 	if curve == nil {
-		return Round1Payload{}, nil, fmt.Errorf("nil curve")
+		return Round1Payload{}, nil, errNilCurve
 	}
 
 	circ := sha256xorCircuit
@@ -101,10 +104,10 @@ func GarblerRound1(rng io.Reader, curve elliptic.Curve, preimagePart [sha256.Siz
 // The curve argument must be non-nil.
 func GarblerRound3(state *GarblerSession, curve elliptic.Curve, req Round2Payload) (Round3Payload, error) {
 	if state == nil || state.senderSetup.Scalar == nil {
-		return Round3Payload{}, fmt.Errorf("invalid garbler state for round 3")
+		return Round3Payload{}, errors.New("sha2pc: invalid garbler session")
 	}
 	if curve == nil {
-		return Round3Payload{}, fmt.Errorf("nil curve")
+		return Round3Payload{}, errNilCurve
 	}
 	ciphertexts, err := ot.EncryptCOCiphertexts(curve, state.senderSetup, req.Choices, state.wires)
 	if err != nil {
@@ -114,7 +117,6 @@ func GarblerRound3(state *GarblerSession, curve elliptic.Curve, req Round2Payloa
 	return Round3Payload{Ciphertexts: ciphertexts}, nil
 }
 
-// GarblerFinalize consumes Round4 payload and returns the final digest.
 // selectOutputWires chooses the wires that correspond to circuit outputs.
 func selectOutputWires(circ *circuit.Circuit, garbled *circuit.Garbled) []ot.Wire {
 	outputs := circ.Outputs.Size()
