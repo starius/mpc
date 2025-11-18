@@ -2,6 +2,7 @@ package sha2pc
 
 import (
 	"bytes"
+	"crypto/elliptic"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -349,7 +350,8 @@ func decodeOutputHints(data []byte) ([]ot.Wire, error) {
 	return result, nil
 }
 
-// encodePoints serializes EC points.
+// encodePoints serializes EC points, storing each X coordinate and a packed set
+// of Y parities to exploit standard compressed-point encoding.
 func encodePoints(points []ot.ECPoint) []byte {
 	var buf bytes.Buffer
 	var header [4]byte
@@ -357,13 +359,15 @@ func encodePoints(points []ot.ECPoint) []byte {
 	buf.Write(header[:])
 	for _, p := range points {
 		writeBigInt(&buf, p.X)
-		writeBigInt(&buf, p.Y)
 	}
+
+	signs := packPointSigns(points)
+	writeChunk(&buf, signs)
 
 	return buf.Bytes()
 }
 
-// decodePoints rebuilds EC points.
+// decodePoints rebuilds EC points from compressed X coordinates and sign bits.
 func decodePoints(data []byte) ([]ot.ECPoint, error) {
 	reader := bytes.NewReader(data)
 	var header [4]byte
@@ -371,20 +375,70 @@ func decodePoints(data []byte) ([]ot.ECPoint, error) {
 		return nil, err
 	}
 	count := int(byteOrder.Uint32(header[:]))
-	result := make([]ot.ECPoint, count)
+	xs := make([]*big.Int, count)
 	for i := 0; i < count; i++ {
 		x, err := readBigInt(reader)
 		if err != nil {
 			return nil, err
 		}
-		y, err := readBigInt(reader)
-		if err != nil {
-			return nil, err
+		xs[i] = x
+	}
+	signs, err := readChunk(reader)
+	if err != nil {
+		return nil, err
+	}
+	if len(signs)*8 < count {
+		return nil, fmt.Errorf("round2 sign buffer too short: have %d bits need %d", len(signs)*8, count)
+	}
+	if CurveP256 == nil {
+		return nil, errNilCurve
+	}
+	byteLen := (CurveP256.Params().BitSize + 7) / 8
+	result := make([]ot.ECPoint, count)
+	for i := 0; i < count; i++ {
+		odd := pointSign(signs, i)
+		compressed := make([]byte, 1+byteLen)
+		if odd {
+			compressed[0] = 0x03
+		} else {
+			compressed[0] = 0x02
+		}
+		xBytes := xs[i].Bytes()
+		copy(compressed[1+byteLen-len(xBytes):], xBytes)
+
+		x, y := elliptic.UnmarshalCompressed(CurveP256, compressed)
+		if x == nil || y == nil {
+			return nil, fmt.Errorf("failed to decompress evaluator choice %d", i)
 		}
 		result[i] = ot.ECPoint{X: x, Y: y}
 	}
 
 	return result, nil
+}
+
+// packPointSigns packs the parity of the Y coordinate for each point.
+func packPointSigns(points []ot.ECPoint) []byte {
+	if len(points) == 0 {
+		return nil
+	}
+	signs := make([]byte, (len(points)+7)/8)
+	for i, p := range points {
+		if p.Y.Bit(0) == 1 {
+			signs[i/8] |= 1 << uint(i%8)
+		}
+	}
+
+	return signs
+}
+
+// pointSign fetches the stored parity bit for the ith point.
+func pointSign(signs []byte, idx int) bool {
+	if len(signs) == 0 {
+		return false
+	}
+
+	b := signs[idx/8]
+	return (b & (1 << uint(idx%8))) != 0
 }
 
 // encodeCiphertexts serializes OT ciphertexts.

@@ -73,7 +73,7 @@ func Example() {
 	// round1 curve=P-256
 	// round1 encode=87 session=195
 	// round2 choices=256
-	// round2 encode=18438 session=9343
+	// round2 encode=9258 session=9343
 	// round3 ciphertexts=256 tables=127806
 	// round3 encode=1218390
 	// round4 digest-prefix=4b2f7457

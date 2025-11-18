@@ -118,7 +118,7 @@ func TestDeterministicTranscript(t *testing.T) {
 
 	const (
 		expRound1 = "1e95f7a3a56cb202b75199712da90714a257145fcca74d2477579f07060b5444"
-		expRound2 = "b27ec662ea58e1e66468b86b5bfdcfe7cd98cb8982e38cd777078ca4e4904640"
+		expRound2 = "564339c8baf52374070c1b60019b999030d7612b9fa5160ab9c6d3ce8ccf3000"
 		expRound3 = "3c7aaa2897f21d919d8935427e057038dc965396e6edec87afba102e954ca89c"
 		expFinal  = "4b2f74579fc7c778745121996f604371a326dc5174f9851706032626668abf2e"
 	)
@@ -253,7 +253,7 @@ func TestSessionIdempotency(t *testing.T) {
 
 	const (
 		idemRound1Hash           = "0d070317eccb50f5ab460c20ea035672ab9f4ce11783c2bcc98903bfa7983cee"
-		idemRound2Hash           = "3c869e036cfb5803f2df8a112e00910aa9837a424aa1e30bb5d901fec04d3a37"
+		idemRound2Hash           = "7d014126e2aeae96c9aa5fcc74c0d1e826e9de5f2aece6e7a09ede3555425bfa"
 		idemRound3Hash           = "bef0bf40cbdb420b0460d71e22cbbcae799546ea50882b3ffefd502e021fe534"
 		idemGarblerSessionHash   = "00cbbd44b8bb74d4fe9ac921c17870d5d53ab0e240ea196d5203d468a64bb767"
 		idemEvaluatorSessionHash = "b4a0c8b2a113ec38747d5d583e96446a27fa6f9dda9e74d50fe53cb1118488cf"

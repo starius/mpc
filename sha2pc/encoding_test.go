@@ -25,10 +25,14 @@ func TestRound1Encoding(t *testing.T) {
 
 // TestRound2Encoding ensures Round2 payload encoding is lossless.
 func TestRound2Encoding(t *testing.T) {
+	curve := CurveP256
+	gx := new(big.Int).Set(curve.Params().Gx)
+	gy := new(big.Int).Set(curve.Params().Gy)
+	x2, y2 := curve.ScalarBaseMult([]byte{2})
 	payload := Round2Payload{
 		Choices: []ot.ECPoint{
-			{X: big.NewInt(1), Y: big.NewInt(2)},
-			{X: big.NewInt(3), Y: big.NewInt(4)},
+			{X: gx, Y: gy},
+			{X: new(big.Int).Set(x2), Y: new(big.Int).Set(y2)},
 		},
 	}
 	data, err := EncodeRound2(payload)
