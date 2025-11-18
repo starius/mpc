@@ -8,6 +8,7 @@ import (
 	"io"
 	"math/big"
 
+	"github.com/markkurossi/mpc/circuit"
 	"github.com/markkurossi/mpc/ot"
 )
 
@@ -61,14 +62,9 @@ func GarblerRound1(rng io.Reader, curve elliptic.Curve, preimagePart [sha256.Siz
 		return Round1Payload{}, nil, fmt.Errorf("garbler input mismatch: got %d bits want %d",
 			len(bits), gBits)
 	}
-	garblerLabels := make([]ot.Label, gBits)
-	for i := 0; i < gBits; i++ {
-		wire := garbled.Wires[i]
-		if bits[i] {
-			garblerLabels[i] = wire.L1
-		} else {
-			garblerLabels[i] = wire.L0
-		}
+	garblerLabels, err := circuit.LabelsForBits(garbled.Wires[:gBits], bits)
+	if err != nil {
+		return Round1Payload{}, nil, err
 	}
 
 	evaluatorWires := garbled.Wires[gBits : gBits+eBits]

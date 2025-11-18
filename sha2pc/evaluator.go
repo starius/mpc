@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/markkurossi/mpc/circuit"
 	"github.com/markkurossi/mpc/ot"
 )
 
@@ -87,21 +88,10 @@ func EvaluatorRound4(curve elliptic.Curve, state *EvaluatorSession, msg Round3Pa
 			len(state.outputHints), sha256xorCircuit.Outputs.Size())
 	}
 
-	outputBits := make([]bool, len(state.outputHints))
 	start := sha256xorCircuit.NumWires - len(state.outputHints)
-	for i := 0; i < len(state.outputHints); i++ {
-		label := wires[start+i]
-		hint := state.outputHints[i]
-		switch {
-		case label.Equal(hint.L0):
-			outputBits[i] = false
-		case label.Equal(hint.L1):
-			outputBits[i] = true
-		default:
-			return digest,
-				fmt.Errorf("output label mismatch at %d: %s vs %s/%s",
-					i, label, hint.L0, hint.L1)
-		}
+	outputBits, err := circuit.BitsFromLabels(state.outputHints, wires[start:])
+	if err != nil {
+		return digest, err
 	}
 
 	bytes := bitsToBytesLittle(outputBits)
