@@ -6,33 +6,31 @@ import (
 	"github.com/markkurossi/mpc/ot"
 )
 
-func TestLabelsForBits(t *testing.T) {
-	wires := []ot.Wire{
-		{L0: ot.Label{D0: 1}, L1: ot.Label{D0: 2}},
-		{L0: ot.Label{D0: 3}, L1: ot.Label{D0: 4}},
+func TestLabelForBit(t *testing.T) {
+	wire := ot.Wire{
+		L0: ot.Label{D0: 1},
+		L1: ot.Label{D0: 2},
 	}
-	bits := []bool{false, true}
-
-	labels, err := LabelsForBits(wires, bits)
-	if err != nil {
-		t.Fatalf("LabelsForBits: %v", err)
+	if LabelForBit(wire, false).D0 != 1 {
+		t.Fatalf("expected L0 label")
 	}
-	if labels[0].D0 != 1 || labels[1].D0 != 4 {
-		t.Fatalf("label mismatch: %#v", labels)
+	if LabelForBit(wire, true).D0 != 2 {
+		t.Fatalf("expected L1 label")
 	}
 }
 
-func TestBitsFromLabels(t *testing.T) {
-	wires := []ot.Wire{
-		{L0: ot.Label{D0: 10}, L1: ot.Label{D0: 20}},
+func TestBitFromLabel(t *testing.T) {
+	wire := ot.Wire{
+		L0: ot.Label{D0: 3},
+		L1: ot.Label{D0: 4},
 	}
-	labels := []ot.Label{wires[0].L1}
-
-	bits, err := BitsFromLabels(wires, labels)
-	if err != nil {
-		t.Fatalf("BitsFromLabels: %v", err)
+	if bit, err := BitFromLabel(wire, wire.L0); err != nil || bit {
+		t.Fatalf("expected false, got %v (err=%v)", bit, err)
 	}
-	if len(bits) != 1 || !bits[0] {
-		t.Fatalf("bits mismatch: %#v", bits)
+	if bit, err := BitFromLabel(wire, wire.L1); err != nil || !bit {
+		t.Fatalf("expected true, got %v (err=%v)", bit, err)
+	}
+	if _, err := BitFromLabel(wire, ot.Label{D0: 5}); err == nil {
+		t.Fatalf("expected error for unknown label")
 	}
 }

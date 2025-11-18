@@ -82,18 +82,10 @@ func Garbler(cfg *env.Config, conn *p2p.Conn, oti ot.OT, circ *Circuit,
 	}
 
 	// Select our inputs.
-	var n1 []ot.Label
-	for i := 0; i < int(circ.Inputs[0].Type.Bits); i++ {
-		wire := garbled.Wires[i]
-
-		var n ot.Label
-
-		if inputs.Bit(i) == 1 {
-			n = wire.L1
-		} else {
-			n = wire.L0
-		}
-		n1 = append(n1, n)
+	inBits := int(circ.Inputs[0].Type.Bits)
+	n1 := make([]ot.Label, inBits)
+	for i := 0; i < inBits; i++ {
+		n1[i] = LabelForBit(garbled.Wires[i], inputs.Bit(i) == 1)
 	}
 
 	// Send our inputs.
@@ -145,27 +137,26 @@ func Garbler(cfg *env.Config, conn *p2p.Conn, oti ot.OT, circ *Circuit,
 	// Resolve result values.
 
 	result := big.NewInt(0)
-	var label ot.Label
-
-	for i := 0; i < circ.Outputs.Size(); i++ {
-		err := conn.ReceiveLabel(&label, &labelData)
-		if err != nil {
+	outCount := int(circ.Outputs.Size())
+	labels := make([]ot.Label, outCount)
+	for i := 0; i < outCount; i++ {
+		if err := conn.ReceiveLabel(&labels[i], &labelData); err != nil {
 			return nil, err
 		}
 		if i == 0 {
 			timing.Sample("Eval", nil)
 		}
-		wire := garbled.Wires[circ.NumWires-circ.Outputs.Size()+i]
+	}
 
-		var bit uint
-		if label.Equal(wire.L0) {
-			bit = 0
-		} else if label.Equal(wire.L1) {
-			bit = 1
-		} else {
-			return nil, fmt.Errorf("unknown label %s for result %d", label, i)
+	outputStart := int(circ.NumWires) - outCount
+	for i := 0; i < outCount; i++ {
+		bit, err := BitFromLabel(garbled.Wires[outputStart+i], labels[i])
+		if err != nil {
+			return nil, err
 		}
-		result = big.NewInt(0).SetBit(result, i, bit)
+		if bit {
+			result = big.NewInt(0).SetBit(result, i, 1)
+		}
 	}
 	data := result.Bytes()
 	if err := conn.SendData(data); err != nil {
