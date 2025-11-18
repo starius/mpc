@@ -8,7 +8,6 @@ import (
 	"io"
 	"math/big"
 
-	"github.com/markkurossi/mpc/circuit"
 	"github.com/markkurossi/mpc/ot"
 )
 
@@ -83,11 +82,17 @@ func GarblerRound1(rng io.Reader, curve elliptic.Curve, preimagePart [sha256.Siz
 	state.wires = make([]ot.Wire, len(evaluatorWires))
 	copy(state.wires, evaluatorWires)
 
+	// Choose the wires that correspond to circuit outputs.
+	outputs := circ.Outputs.Size()
+	outputHints := make([]ot.Wire, outputs)
+	start := int(circ.NumWires) - outputs
+	copy(outputHints, garbled.Wires[start:])
+
 	payload := Round1Payload{
 		Key:           state.key,
 		GarbledTables: garbled.Gates,
 		GarblerInputs: garblerLabels,
-		OutputHints:   selectOutputWires(circ, garbled),
+		OutputHints:   outputHints,
 		OT: OTSenderSetup{
 			CurveName: setup.CurveName,
 			A: ot.ECPoint{
@@ -115,14 +120,4 @@ func GarblerRound3(state *GarblerSession, curve elliptic.Curve, req Round2Payloa
 	}
 
 	return Round3Payload{Ciphertexts: ciphertexts}, nil
-}
-
-// selectOutputWires chooses the wires that correspond to circuit outputs.
-func selectOutputWires(circ *circuit.Circuit, garbled *circuit.Garbled) []ot.Wire {
-	outputs := circ.Outputs.Size()
-	result := make([]ot.Wire, outputs)
-	start := int(circ.NumWires) - outputs
-	copy(result, garbled.Wires[start:])
-
-	return result
 }
