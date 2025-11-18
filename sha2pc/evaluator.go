@@ -89,9 +89,13 @@ func EvaluatorRound4(curve elliptic.Curve, state *EvaluatorSession, msg Round3Pa
 	}
 
 	start := sha256xorCircuit.NumWires - len(state.outputHints)
-	outputBits, err := circuit.BitsFromLabels(state.outputHints, wires[start:])
-	if err != nil {
-		return digest, err
+	outputBits := make([]bool, len(state.outputHints))
+	for i := 0; i < len(state.outputHints); i++ {
+		bit, err := circuit.BitFromLabel(state.outputHints[i], wires[start+i])
+		if err != nil {
+			return digest, err
+		}
+		outputBits[i] = bit
 	}
 
 	bytes := bitsToBytesLittle(outputBits)

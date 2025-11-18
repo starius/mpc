@@ -62,9 +62,9 @@ func GarblerRound1(rng io.Reader, curve elliptic.Curve, preimagePart [sha256.Siz
 		return Round1Payload{}, nil, fmt.Errorf("garbler input mismatch: got %d bits want %d",
 			len(bits), gBits)
 	}
-	garblerLabels, err := circuit.LabelsForBits(garbled.Wires[:gBits], bits)
-	if err != nil {
-		return Round1Payload{}, nil, err
+	garblerLabels := make([]ot.Label, gBits)
+	for i := 0; i < gBits; i++ {
+		garblerLabels[i] = circuit.LabelForBit(garbled.Wires[i], bits[i])
 	}
 
 	evaluatorWires := garbled.Wires[gBits : gBits+eBits]
