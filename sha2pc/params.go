@@ -16,12 +16,15 @@ const (
 
 	labelByteLen = 16
 
+	// garblingKeyBytes is the size of the AES garbling key per round.
+	garblingKeyBytes = 32
+
 	// garbledTableLabelCount is the total number of ciphertext labels emitted by
 	// the SHA256(XOR) garbled circuit (derived from its AND/OR/INV gate counts).
 	garbledTableLabelCount = 42914
 
 	// garbledTableByteLen is the total byte length of all garbled table labels.
-	garbledTableByteLen = garbledTableLabelCount * 16
+	garbledTableByteLen = garbledTableLabelCount * labelByteLen
 
 	// garblerInputLabelCount captures how many labels the garbler sends in round 3.
 	garblerInputLabelCount = hashInputBitCount
@@ -37,6 +40,13 @@ const (
 	outputHintCount = 256
 
 	outputHintBytes = outputHintCount * 2 * labelByteLen
+
+	// evaluatorChoiceSignBytes is the number of bytes needed for compressed point signs.
+	evaluatorChoiceSignBytes = (evaluatorCiphertextCount + 7) / 8
+
+	// round3PayloadLen is the fixed number of bytes in a Round 3 payload.
+	round3PayloadLen = len(magicRound3) + garblingKeyBytes +
+		garbledTableByteLen + garblerInputLabelBytes + outputHintBytes + ciphertextBytes
 )
 
 // init validates that the circuit matches the expected consts.

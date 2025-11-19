@@ -119,7 +119,7 @@ func TestDeterministicTranscript(t *testing.T) {
 
 	const (
 		expRound1 = "757172ded20738591e9a4139faa34396d06243f6ebe337eb0225b22ec161f99c"
-		expRound2 = "5d5f57649f62b8d8c192d1dfff79c169c64066157f905bffcca78ca16d964537"
+		expRound2 = "cbebf6c0cc551c9c91092a56d8ec213994420c683f74dd00c1e71fe6de6715d2"
 		expRound3 = "d61b029ce411075aab2144cbfcb5117ab1dc68408996d50a5b889b631fa86cbf"
 		expFinal  = "4b2f74579fc7c778745121996f604371a326dc5174f9851706032626668abf2e"
 	)
@@ -235,10 +235,10 @@ func TestPayloadSizesByCurve(t *testing.T) {
 			},
 			expect: expectations{
 				round1Len:    72,
-				round2Len:    8237,
+				round2Len:    8232,
 				round3Len:    707138,
 				garblerLen:   170,
-				evaluatorLen: 8306,
+				evaluatorLen: 8298,
 				finalHash:    "4b2f74579fc7c778745121996f604371a326dc5174f9851706032626668abf2e",
 			},
 		},
@@ -256,10 +256,10 @@ func TestPayloadSizesByCurve(t *testing.T) {
 			},
 			expect: expectations{
 				round1Len:    64,
-				round2Len:    7213,
+				round2Len:    7208,
 				round3Len:    707138,
 				garblerLen:   150,
-				evaluatorLen: 7274,
+				evaluatorLen: 7266,
 				finalHash:    "4b2f74579fc7c778745121996f604371a326dc5174f9851706032626668abf2e",
 			},
 		},
@@ -412,10 +412,10 @@ func TestSessionIdempotency(t *testing.T) {
 
 	const (
 		idemRound1Hash           = "ccc4ecf919fff10e9f42a993278ec1e38013e67c972b350798e5bd146ba31924"
-		idemRound2Hash           = "e4cb5b04909342a445eba0868802df95ebf701ff24fb3760bb5159afd99c6f0d"
+		idemRound2Hash           = "4c06c0f74a6206fb60052b896e21416b1aa65a3ad7d2e6f96ab38c9a872bd389"
 		idemRound3Hash           = "d43e936a62985065a7117ab112a8055829fc567f6c293458652a579f971c9c90"
 		idemGarblerSessionHash   = "942ed31314f6cecbc11f0a3fda80777124b0b6c94d25f18af1c87dbc7d0b0a8a"
-		idemEvaluatorSessionHash = "22c18b030b02ab6cf7f7eb8f6932d3f499ab5b1044c8272c2e024ed701f712a3"
+		idemEvaluatorSessionHash = "2652502c338d15df59147af41fe20bdea9432fc0ce3bed7167f7bac9ccd35d00"
 		idemFinalHash            = "4b2f74579fc7c778745121996f604371a326dc5174f9851706032626668abf2e"
 	)
 

@@ -28,10 +28,7 @@ const (
 	magicEvalSession = "ES"
 )
 
-var byteOrder = binary.BigEndian
-
-// chunkSizeLimit bounds a single encoded chunk. The largest payload today
-// (Round 3) is ~0.7MB, so 1MB leaves ample headroom without risking OOM.
+// chunkSizeLimit bounds a single encoded chunk used for variable-length metadata.
 const chunkSizeLimit = 1 * 1024 * 1024
 
 // EncodeRound1 turns a Round1Payload into bytes.
@@ -148,54 +145,53 @@ func EncodeRound3(p Round3Payload) ([]byte, error) {
 	if err := encodeCiphertexts(&buf, p.Ciphertexts); err != nil {
 		return nil, err
 	}
+	if buf.Len() != round3PayloadLen {
+		return nil, fmt.Errorf("sha2pc: round3 length mismatch: produced %d bytes want %d",
+			buf.Len(), round3PayloadLen)
+	}
 
 	return buf.Bytes(), nil
 }
 
 // DecodeRound3 reconstructs a Round3Payload from bytes.
 func DecodeRound3(data []byte) (Round3Payload, error) {
-	reader := bytes.NewReader(data)
-	var payload Round3Payload
-	magic := make([]byte, 2)
-	if _, err := io.ReadFull(reader, magic); err != nil {
-		return Round3Payload{}, err
+	if len(data) != round3PayloadLen {
+		return Round3Payload{}, fmt.Errorf("sha2pc: round3 payload mismatch: got %d want %d",
+			len(data), round3PayloadLen)
 	}
-	if string(magic) != magicRound3 {
+	var payload Round3Payload
+	offset := 0
+	if string(data[offset:offset+len(magicRound3)]) != magicRound3 {
 		return Round3Payload{}, fmt.Errorf("invalid round3 magic")
 	}
-	if _, err := io.ReadFull(reader, payload.Key[:]); err != nil {
-		return Round3Payload{}, err
-	}
-	tableBytes := make([]byte, garbledTableByteLen)
-	if _, err := io.ReadFull(reader, tableBytes); err != nil {
-		return Round3Payload{}, err
-	}
+	offset += len(magicRound3)
+	copy(payload.Key[:], data[offset:offset+garblingKeyBytes])
+	offset += garblingKeyBytes
+
+	end := offset + garbledTableByteLen
 	var err error
-	payload.GarbledTables, err = decodeGarbledTables(tableBytes)
+	payload.GarbledTables, err = decodeGarbledTables(data[offset:end])
 	if err != nil {
 		return Round3Payload{}, err
 	}
-	labelBytes := make([]byte, garblerInputLabelBytes)
-	if _, err := io.ReadFull(reader, labelBytes); err != nil {
-		return Round3Payload{}, err
-	}
-	payload.GarblerInputs, err = decodeLabels(labelBytes)
+	offset = end
+
+	end = offset + garblerInputLabelBytes
+	payload.GarblerInputs, err = decodeLabels(data[offset:end])
 	if err != nil {
 		return Round3Payload{}, err
 	}
-	hintBytes := make([]byte, outputHintBytes)
-	if _, err := io.ReadFull(reader, hintBytes); err != nil {
-		return Round3Payload{}, err
-	}
-	payload.OutputHints, err = decodeOutputHints(hintBytes)
+	offset = end
+
+	end = offset + outputHintBytes
+	payload.OutputHints, err = decodeOutputHints(data[offset:end])
 	if err != nil {
 		return Round3Payload{}, err
 	}
-	ctBytes := make([]byte, ciphertextBytes)
-	if _, err := io.ReadFull(reader, ctBytes); err != nil {
-		return Round3Payload{}, err
-	}
-	payload.Ciphertexts, err = decodeCiphertexts(ctBytes)
+	offset = end
+
+	end = offset + ciphertextBytes
+	payload.Ciphertexts, err = decodeCiphertexts(data[offset:end])
 	if err != nil {
 		return Round3Payload{}, err
 	}
@@ -443,19 +439,24 @@ func decodeOutputHints(data []byte) ([]ot.Wire, error) {
 // encodePoints serializes EC points into buf using fixed-width X coordinates
 // plus packed Y parities to keep sizes uniform regardless of random inputs.
 func encodePoints(curve elliptic.Curve, buf *bytes.Buffer, points []ot.ECPoint) error {
+	if len(points) != evaluatorCiphertextCount {
+		return fmt.Errorf("sha2pc: choice count mismatch %d != %d",
+			len(points), evaluatorCiphertextCount)
+	}
 	byteLen, err := curveByteLen(curve)
 	if err != nil {
 		return err
 	}
-	var header [4]byte
-	byteOrder.PutUint32(header[:], uint32(len(points)))
-	buf.Write(header[:])
 	for _, p := range points {
 		writeFixedBigInt(buf, byteLen, p.X)
 	}
 
 	signs := packPointSigns(points)
-	writeChunk(buf, signs)
+	if len(signs) != evaluatorChoiceSignBytes {
+		return fmt.Errorf("sha2pc: sign buffer mismatch %d != %d",
+			len(signs), evaluatorChoiceSignBytes)
+	}
+	buf.Write(signs)
 
 	return nil
 }
@@ -469,29 +470,19 @@ func decodePoints(curve elliptic.Curve, data []byte) ([]ot.ECPoint, error) {
 	if err != nil {
 		return nil, err
 	}
-	reader := bytes.NewReader(data)
-	var header [4]byte
-	if _, err := reader.Read(header[:]); err != nil {
-		return nil, err
+	expected := evaluatorCiphertextCount*byteLen + evaluatorChoiceSignBytes
+	if len(data) != expected {
+		return nil, fmt.Errorf("round2 choice payload mismatch: got %d want %d", len(data), expected)
 	}
-	count := int(byteOrder.Uint32(header[:]))
-	xs := make([]*big.Int, count)
-	for i := 0; i < count; i++ {
-		x, err := readFixedBigInt(reader, byteLen)
-		if err != nil {
-			return nil, err
-		}
-		xs[i] = x
+	xs := make([]*big.Int, evaluatorCiphertextCount)
+	offset := 0
+	for i := 0; i < evaluatorCiphertextCount; i++ {
+		xs[i] = new(big.Int).SetBytes(data[offset : offset+byteLen])
+		offset += byteLen
 	}
-	signs, err := readChunk(reader)
-	if err != nil {
-		return nil, err
-	}
-	if len(signs)*8 < count {
-		return nil, fmt.Errorf("round2 sign buffer too short: have %d bits need %d", len(signs)*8, count)
-	}
-	result := make([]ot.ECPoint, count)
-	for i := 0; i < count; i++ {
+	signs := data[offset:]
+	result := make([]ot.ECPoint, evaluatorCiphertextCount)
+	for i := 0; i < evaluatorCiphertextCount; i++ {
 		odd := pointSign(signs, i)
 		compressed := make([]byte, 1+byteLen)
 		if odd {
@@ -813,16 +804,24 @@ func encodeChoiceBundle(curve elliptic.Curve, bundle ot.COChoiceBundle) ([]byte,
 	writeFixedBigInt(&buf, byteLen, bundle.Ax)
 	writeFixedBigInt(&buf, byteLen, bundle.Ay)
 
-	var header [4]byte
-	byteOrder.PutUint32(header[:], uint32(len(bundle.Scalars)))
-	buf.Write(header[:])
+	if len(bundle.Scalars) != evaluatorCiphertextCount {
+		return nil, fmt.Errorf("sha2pc: choice scalar mismatch %d != %d",
+			len(bundle.Scalars), evaluatorCiphertextCount)
+	}
+	if len(bundle.Bits) != evaluatorCiphertextCount {
+		return nil, fmt.Errorf("sha2pc: choice bits mismatch %d != %d",
+			len(bundle.Bits), evaluatorCiphertextCount)
+	}
 	for _, scalar := range bundle.Scalars {
 		writeFixedBigInt(&buf, byteLen, scalar)
 	}
 
-	byteOrder.PutUint32(header[:], uint32(len(bundle.Bits)))
-	buf.Write(header[:])
-	buf.Write(bitsToBytesLittle(bundle.Bits))
+	bitBytes := bitsToBytesLittle(bundle.Bits)
+	if len(bitBytes) != evaluatorChoiceSignBytes {
+		return nil, fmt.Errorf("sha2pc: choice bit encoding mismatch %d != %d",
+			len(bitBytes), evaluatorChoiceSignBytes)
+	}
+	buf.Write(bitBytes)
 
 	return buf.Bytes(), nil
 }
@@ -857,32 +856,24 @@ func decodeChoiceBundle(curve elliptic.Curve, data []byte) (ot.COChoiceBundle, e
 		return ot.COChoiceBundle{}, err
 	}
 
-	var header [4]byte
-	if _, err := reader.Read(header[:]); err != nil {
-		return ot.COChoiceBundle{}, err
-	}
-
-	scalarCount := int(byteOrder.Uint32(header[:]))
-	scalars := make([]*big.Int, scalarCount)
-	for i := 0; i < scalarCount; i++ {
+	scalars := make([]*big.Int, evaluatorCiphertextCount)
+	for i := 0; i < evaluatorCiphertextCount; i++ {
 		value, err := readFixedBigInt(reader, byteLen)
 		if err != nil {
 			return ot.COChoiceBundle{}, err
 		}
 		scalars[i] = value
 	}
-	if _, err := reader.Read(header[:]); err != nil {
-		return ot.COChoiceBundle{}, err
-	}
 
-	bitsCount := int(byteOrder.Uint32(header[:]))
-	bits := make([]bool, bitsCount)
-	bitsByteLen := (bitsCount + 7) / 8
-	raw := make([]byte, bitsByteLen)
+	raw := make([]byte, evaluatorChoiceSignBytes)
 	if _, err := reader.Read(raw); err != nil {
 		return ot.COChoiceBundle{}, err
 	}
-	copy(bits, bytesToBitsLittle(raw))
+	bits := bytesToBitsLittle(raw)
+	if len(bits) < evaluatorCiphertextCount {
+		return ot.COChoiceBundle{}, fmt.Errorf("choice bit buffer too short: %d", len(bits))
+	}
+	bits = bits[:evaluatorCiphertextCount]
 
 	return ot.COChoiceBundle{
 		CurveName: string(name),

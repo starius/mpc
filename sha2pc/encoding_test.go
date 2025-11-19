@@ -32,15 +32,9 @@ func TestRound2Encoding(t *testing.T) {
 	if curve == nil {
 		t.Fatalf("CurveP256 is nil")
 	}
-	gx := new(big.Int).Set(curve.Params().Gx)
-	gy := new(big.Int).Set(curve.Params().Gy)
-	x2, y2 := curve.ScalarBaseMult([]byte{2})
 	payload := Round2Payload{
 		CurveName: curve.Params().Name,
-		Choices: []ot.ECPoint{
-			{X: gx, Y: gy},
-			{X: new(big.Int).Set(x2), Y: new(big.Int).Set(y2)},
-		},
+		Choices:   sampleChoices(curve),
 	}
 	data, err := EncodeRound2(CurveP256, payload)
 	if err != nil {
@@ -208,6 +202,20 @@ func sampleRound3() Round3Payload {
 	}
 }
 
+func sampleChoices(curve elliptic.Curve) []ot.ECPoint {
+	result := make([]ot.ECPoint, evaluatorCiphertextCount)
+	for i := 0; i < evaluatorCiphertextCount; i++ {
+		scalar := big.NewInt(int64(i + 1))
+		x, y := curve.ScalarBaseMult(scalar.Bytes())
+		result[i] = ot.ECPoint{
+			X: new(big.Int).Set(x),
+			Y: new(big.Int).Set(y),
+		}
+	}
+
+	return result
+}
+
 // sampleLabel creates a deterministic label for tests.
 func sampleLabel(v uint64) ot.Label {
 	return ot.Label{
@@ -342,16 +350,21 @@ func sampleGarblerSession() *GarblerSession {
 
 // sampleEvaluatorSession builds a representative EvaluatorSession for tests.
 func sampleEvaluatorSession() *EvaluatorSession {
+	scalars := make([]*big.Int, evaluatorCiphertextCount)
+	for i := 0; i < evaluatorCiphertextCount; i++ {
+		scalars[i] = big.NewInt(int64(23 + i))
+	}
+	bits := make([]bool, evaluatorCiphertextCount)
+	for i := 0; i < evaluatorCiphertextCount; i++ {
+		bits[i] = (i%2 == 0)
+	}
 	return &EvaluatorSession{
 		choiceBundle: ot.COChoiceBundle{
 			CurveName: "P-256",
 			Ax:        big.NewInt(17),
 			Ay:        big.NewInt(19),
-			Scalars: []*big.Int{
-				big.NewInt(23),
-				big.NewInt(29),
-			},
-			Bits: []bool{true, false},
+			Scalars:   scalars,
+			Bits:      bits,
 		},
 	}
 }
