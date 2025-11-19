@@ -14,12 +14,29 @@ const (
 	// hashInputBitCount locks the 32-byte preimage size (256 bits).
 	hashInputBitCount = 32 * 8
 
+	labelByteLen = 16
+
 	// garbledTableLabelCount is the total number of ciphertext labels emitted by
 	// the SHA256(XOR) garbled circuit (derived from its AND/OR/INV gate counts).
 	garbledTableLabelCount = 42914
 
 	// garbledTableByteLen is the total byte length of all garbled table labels.
 	garbledTableByteLen = garbledTableLabelCount * 16
+
+	// garblerInputLabelCount captures how many labels the garbler sends in round 3.
+	garblerInputLabelCount = hashInputBitCount
+
+	garblerInputLabelBytes = garblerInputLabelCount * labelByteLen
+
+	// evaluatorCiphertextCount equals the number of evaluator input bits.
+	evaluatorCiphertextCount = hashInputBitCount
+
+	ciphertextBytes = evaluatorCiphertextCount * 2 * labelByteLen
+
+	// outputHintCount equals the SHA256 output bits.
+	outputHintCount = 256
+
+	outputHintBytes = outputHintCount * 2 * labelByteLen
 )
 
 // init validates that the circuit matches the expected consts.
@@ -41,6 +58,10 @@ func init() {
 	}
 	if labels != garbledTableLabelCount {
 		panic(fmt.Sprintf("garbled table label mismatch: %d != %d", labels, garbledTableLabelCount))
+	}
+
+	if outputs := sha256xorCircuit.Outputs.Size(); outputs != outputHintCount {
+		panic(fmt.Sprintf("output hint count mismatch: %d != %d", outputs, outputHintCount))
 	}
 }
 

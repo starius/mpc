@@ -139,9 +139,15 @@ func EncodeRound3(p Round3Payload) ([]byte, error) {
 	if err := encodeGarbledTables(&buf, p.GarbledTables); err != nil {
 		return nil, err
 	}
-	encodeLabels(&buf, p.GarblerInputs)
-	encodeOutputHints(&buf, p.OutputHints)
-	encodeCiphertexts(&buf, p.Ciphertexts)
+	if err := encodeLabels(&buf, p.GarblerInputs); err != nil {
+		return nil, err
+	}
+	if err := encodeOutputHints(&buf, p.OutputHints); err != nil {
+		return nil, err
+	}
+	if err := encodeCiphertexts(&buf, p.Ciphertexts); err != nil {
+		return nil, err
+	}
 
 	return buf.Bytes(), nil
 }
@@ -150,7 +156,6 @@ func EncodeRound3(p Round3Payload) ([]byte, error) {
 func DecodeRound3(data []byte) (Round3Payload, error) {
 	reader := bytes.NewReader(data)
 	var payload Round3Payload
-	var err error
 	magic := make([]byte, 2)
 	if _, err := io.ReadFull(reader, magic); err != nil {
 		return Round3Payload{}, err
@@ -165,31 +170,32 @@ func DecodeRound3(data []byte) (Round3Payload, error) {
 	if _, err := io.ReadFull(reader, tableBytes); err != nil {
 		return Round3Payload{}, err
 	}
+	var err error
 	payload.GarbledTables, err = decodeGarbledTables(tableBytes)
 	if err != nil {
 		return Round3Payload{}, err
 	}
-	chunk, err := readChunk(reader)
+	labelBytes := make([]byte, garblerInputLabelBytes)
+	if _, err := io.ReadFull(reader, labelBytes); err != nil {
+		return Round3Payload{}, err
+	}
+	payload.GarblerInputs, err = decodeLabels(labelBytes)
 	if err != nil {
 		return Round3Payload{}, err
 	}
-	payload.GarblerInputs, err = decodeLabels(chunk)
+	hintBytes := make([]byte, outputHintBytes)
+	if _, err := io.ReadFull(reader, hintBytes); err != nil {
+		return Round3Payload{}, err
+	}
+	payload.OutputHints, err = decodeOutputHints(hintBytes)
 	if err != nil {
 		return Round3Payload{}, err
 	}
-	chunk, err = readChunk(reader)
-	if err != nil {
+	ctBytes := make([]byte, ciphertextBytes)
+	if _, err := io.ReadFull(reader, ctBytes); err != nil {
 		return Round3Payload{}, err
 	}
-	payload.OutputHints, err = decodeOutputHints(chunk)
-	if err != nil {
-		return Round3Payload{}, err
-	}
-	chunk, err = readChunk(reader)
-	if err != nil {
-		return Round3Payload{}, err
-	}
-	payload.Ciphertexts, err = decodeCiphertexts(chunk)
+	payload.Ciphertexts, err = decodeCiphertexts(ctBytes)
 	if err != nil {
 		return Round3Payload{}, err
 	}
@@ -286,21 +292,26 @@ func DecodeEvaluatorSession(curve elliptic.Curve, data []byte) (*EvaluatorSessio
 }
 
 // encodeLabels flattens all labels into raw bytes.
-func encodeLabels(buf *bytes.Buffer, labels []ot.Label) {
+func encodeLabels(buf *bytes.Buffer, labels []ot.Label) error {
+	if len(labels) != garblerInputLabelCount {
+		return fmt.Errorf("sha2pc: garbler label mismatch %d != %d",
+			len(labels), garblerInputLabelCount)
+	}
 	var tmp ot.LabelData
-	writeChunkLen(buf, len(labels)*len(tmp))
 	for _, label := range labels {
 		label.GetData(&tmp)
 		buf.Write(tmp[:])
 	}
+	return nil
 }
 
 // decodeLabels rebuilds labels from their byte form.
 func decodeLabels(data []byte) ([]ot.Label, error) {
-	const labelSize = 16
-	if len(data)%labelSize != 0 {
-		return nil, fmt.Errorf("label buffer misaligned")
+	if len(data) != garblerInputLabelBytes {
+		return nil, fmt.Errorf("label buffer mismatch: %d != %d",
+			len(data), garblerInputLabelBytes)
 	}
+	const labelSize = labelByteLen
 	var tmp ot.LabelData
 	count := len(data) / labelSize
 	result := make([]ot.Label, count)
@@ -391,32 +402,31 @@ func decodeGarbledTables(data []byte) ([][]ot.Label, error) {
 }
 
 // encodeOutputHints serializes every output wire.
-func encodeOutputHints(buf *bytes.Buffer, wires []ot.Wire) {
+func encodeOutputHints(buf *bytes.Buffer, wires []ot.Wire) error {
+	if len(wires) != outputHintCount {
+		return fmt.Errorf("sha2pc: output hint mismatch %d != %d",
+			len(wires), outputHintCount)
+	}
 	var tmp ot.LabelData
-	const labelSize = len(ot.LabelData{})
-	writeChunkLen(buf, 4+len(wires)*2*labelSize)
-	var header [4]byte
-	byteOrder.PutUint32(header[:], uint32(len(wires)))
-	buf.Write(header[:])
 	for _, wire := range wires {
 		wire.L0.GetData(&tmp)
 		buf.Write(tmp[:])
 		wire.L1.GetData(&tmp)
 		buf.Write(tmp[:])
 	}
+	return nil
 }
 
 // decodeOutputHints rebuilds output wires.
 func decodeOutputHints(data []byte) ([]ot.Wire, error) {
-	reader := bytes.NewReader(data)
-	var header [4]byte
-	if _, err := reader.Read(header[:]); err != nil {
-		return nil, err
+	if len(data) != outputHintBytes {
+		return nil, fmt.Errorf("output hint buffer mismatch: %d != %d",
+			len(data), outputHintBytes)
 	}
-	count := int(byteOrder.Uint32(header[:]))
-	result := make([]ot.Wire, count)
 	var tmp ot.LabelData
-	for i := 0; i < count; i++ {
+	result := make([]ot.Wire, outputHintCount)
+	reader := bytes.NewReader(data)
+	for i := 0; i < outputHintCount; i++ {
 		if _, err := reader.Read(tmp[:]); err != nil {
 			return nil, err
 		}
@@ -527,28 +537,27 @@ func pointSign(signs []byte, idx int) bool {
 }
 
 // encodeCiphertexts serializes OT ciphertexts.
-func encodeCiphertexts(buf *bytes.Buffer, ct []ot.LabelCiphertext) {
-	const block = len(ot.LabelCiphertext{}.Zero)
-	writeChunkLen(buf, 4+len(ct)*2*block)
-	var header [4]byte
-	byteOrder.PutUint32(header[:], uint32(len(ct)))
-	buf.Write(header[:])
+func encodeCiphertexts(buf *bytes.Buffer, ct []ot.LabelCiphertext) error {
+	if len(ct) != evaluatorCiphertextCount {
+		return fmt.Errorf("sha2pc: ciphertext count mismatch %d != %d",
+			len(ct), evaluatorCiphertextCount)
+	}
 	for _, c := range ct {
 		buf.Write(c.Zero[:])
 		buf.Write(c.One[:])
 	}
+	return nil
 }
 
 // decodeCiphertexts rebuilds OT ciphertexts.
 func decodeCiphertexts(data []byte) ([]ot.LabelCiphertext, error) {
-	reader := bytes.NewReader(data)
-	var header [4]byte
-	if _, err := reader.Read(header[:]); err != nil {
-		return nil, err
+	if len(data) != ciphertextBytes {
+		return nil, fmt.Errorf("ciphertext buffer mismatch: %d != %d",
+			len(data), ciphertextBytes)
 	}
-	count := int(byteOrder.Uint32(header[:]))
-	result := make([]ot.LabelCiphertext, count)
-	for i := 0; i < count; i++ {
+	reader := bytes.NewReader(data)
+	result := make([]ot.LabelCiphertext, evaluatorCiphertextCount)
+	for i := 0; i < evaluatorCiphertextCount; i++ {
 		if _, err := reader.Read(result[i].Zero[:]); err != nil {
 			return nil, err
 		}
@@ -621,14 +630,10 @@ func decodeOTSetup(curve elliptic.Curve, reader *bytes.Reader) (OTSenderSetup, e
 
 // writeChunk writes a length-prefixed byte slice.
 func writeChunk(buf *bytes.Buffer, data []byte) {
-	writeChunkLen(buf, len(data))
-	buf.Write(data)
-}
-
-func writeChunkLen(buf *bytes.Buffer, length int) {
 	var scratch [binary.MaxVarintLen64]byte
-	n := binary.PutUvarint(scratch[:], uint64(length))
+	n := binary.PutUvarint(scratch[:], uint64(len(data)))
 	buf.Write(scratch[:n])
+	buf.Write(data)
 }
 
 // readChunk reads a single length-prefixed byte slice.

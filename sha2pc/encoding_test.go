@@ -178,19 +178,33 @@ func sampleRound3() Round3Payload {
 		tables[idx] = row
 	}
 
+	ciphertexts := make([]ot.LabelCiphertext, evaluatorCiphertextCount)
+	for i := 0; i < evaluatorCiphertextCount; i++ {
+		ciphertexts[i] = ot.LabelCiphertext{
+			Zero: newLabelData(byte(1 + i%250)),
+			One:  newLabelData(byte(2 + i%250)),
+		}
+	}
+
+	garblerInputs := make([]ot.Label, garblerInputLabelCount)
+	for i := 0; i < garblerInputLabelCount; i++ {
+		garblerInputs[i] = sampleLabel(20 + uint64(i))
+	}
+
+	outputHints := make([]ot.Wire, outputHintCount)
+	for i := 0; i < outputHintCount; i++ {
+		outputHints[i] = ot.Wire{
+			L0: sampleLabel(100 + uint64(2*i)),
+			L1: sampleLabel(100 + uint64(2*i) + 1),
+		}
+	}
+
 	return Round3Payload{
-		Ciphertexts: []ot.LabelCiphertext{
-			{Zero: newLabelData(1), One: newLabelData(2)},
-			{Zero: newLabelData(3), One: newLabelData(4)},
-		},
+		Ciphertexts:   ciphertexts,
 		Key:           key,
 		GarbledTables: tables,
-		GarblerInputs: []ot.Label{
-			sampleLabel(20), sampleLabel(21),
-		},
-		OutputHints: []ot.Wire{
-			{L0: sampleLabel(30), L1: sampleLabel(31)},
-		},
+		GarblerInputs: garblerInputs,
+		OutputHints:   outputHints,
 	}
 }
 
