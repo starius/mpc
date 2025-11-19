@@ -151,7 +151,6 @@ func TestPayloadSizesByCurve(t *testing.T) {
 		garblerHash   string
 		evaluatorHash string
 		finalHash     string
-		note          string
 	}
 
 	// payloadArtifacts groups the encoded transcripts for a single curve run.
@@ -259,6 +258,10 @@ func TestPayloadSizesByCurve(t *testing.T) {
 				finalHash:     "4b2f74579fc7c778745121996f604371a326dc5174f9851706032626668abf2e",
 			},
 		},
+
+		// P-224 uses 28-byte field elements, so every OT coordinate/scalar
+		// shrinks by four bytes, reducing the Round 1/2 payloads and both
+		// sessions compared to P-256.
 		{
 			name:  "P-224",
 			curve: elliptic.P224(),
@@ -279,7 +282,6 @@ func TestPayloadSizesByCurve(t *testing.T) {
 				garblerHash:   "03c1bf767e145cfbc0b7795831b09030655ca6e6d9c3e61b48de0ad6bb62a722",
 				evaluatorHash: "6bd12fb363bd4ff57f34039c55cca742bb04b7eecd850c9fecf58e7bfab05c86",
 				finalHash:     "4b2f74579fc7c778745121996f604371a326dc5174f9851706032626668abf2e",
-				note:          "P-224 uses 28-byte field elements, so every OT coordinate/scalar shrinks by four bytes, reducing the Round 1/2 payloads and both sessions compared to P-256.",
 			},
 		},
 	}
@@ -288,9 +290,6 @@ func TestPayloadSizesByCurve(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			art := generatePayloadArtifacts(tc.curve, tc.seeds)
-			if tc.expect.note != "" {
-				t.Log(tc.expect.note)
-			}
 
 			assertLength := func(label string, got, want int) {
 				if got != want {
