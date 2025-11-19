@@ -120,7 +120,7 @@ func TestDeterministicTranscript(t *testing.T) {
 	const (
 		expRound1 = "757172ded20738591e9a4139faa34396d06243f6ebe337eb0225b22ec161f99c"
 		expRound2 = "5d5f57649f62b8d8c192d1dfff79c169c64066157f905bffcca78ca16d964537"
-		expRound3 = "4220cf1700830f5e84fd0cfd30dde890e7294342700e9d07656430a08c3ee083"
+		expRound3 = "542f55b5f3474708d66586bed5ec08e4a7c51827de3e239474c5ca51b16015d8"
 		expFinal  = "4b2f74579fc7c778745121996f604371a326dc5174f9851706032626668abf2e"
 	)
 
@@ -236,7 +236,7 @@ func TestPayloadSizesByCurve(t *testing.T) {
 			expect: expectations{
 				round1Len:    72,
 				round2Len:    8237,
-				round3Len:    707155,
+				round3Len:    707152,
 				garblerLen:   170,
 				evaluatorLen: 8306,
 				finalHash:    "4b2f74579fc7c778745121996f604371a326dc5174f9851706032626668abf2e",
@@ -257,7 +257,7 @@ func TestPayloadSizesByCurve(t *testing.T) {
 			expect: expectations{
 				round1Len:    64,
 				round2Len:    7213,
-				round3Len:    707155,
+				round3Len:    707152,
 				garblerLen:   150,
 				evaluatorLen: 7274,
 				finalHash:    "4b2f74579fc7c778745121996f604371a326dc5174f9851706032626668abf2e",
@@ -413,7 +413,7 @@ func TestSessionIdempotency(t *testing.T) {
 	const (
 		idemRound1Hash           = "ccc4ecf919fff10e9f42a993278ec1e38013e67c972b350798e5bd146ba31924"
 		idemRound2Hash           = "e4cb5b04909342a445eba0868802df95ebf701ff24fb3760bb5159afd99c6f0d"
-		idemRound3Hash           = "43205b550360586c28640f44a639a1bf48e6090bf167f31f96adf706ae3fb9a8"
+		idemRound3Hash           = "cdeb9fb97d8001d912ecf8a6832d58e9fc3efffcee81a005f8c8f10f3b74c1dc"
 		idemGarblerSessionHash   = "942ed31314f6cecbc11f0a3fda80777124b0b6c94d25f18af1c87dbc7d0b0a8a"
 		idemEvaluatorSessionHash = "22c18b030b02ab6cf7f7eb8f6932d3f499ab5b1044c8272c2e024ed701f712a3"
 		idemFinalHash            = "4b2f74579fc7c778745121996f604371a326dc5174f9851706032626668abf2e"

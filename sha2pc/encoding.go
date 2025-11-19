@@ -8,7 +8,6 @@ import (
 	"io"
 	"math/big"
 
-	"github.com/markkurossi/mpc/circuit"
 	"github.com/markkurossi/mpc/ot"
 )
 
@@ -137,11 +136,9 @@ func EncodeRound3(p Round3Payload) ([]byte, error) {
 	var buf bytes.Buffer
 	buf.Write([]byte(magicRound3))
 	buf.Write(p.Key[:])
-	tables, err := encodeGarbledTables(p.GarbledTables)
-	if err != nil {
+	if err := encodeGarbledTables(&buf, p.GarbledTables); err != nil {
 		return nil, err
 	}
-	writeChunk(&buf, tables)
 	writeChunk(&buf, encodeLabels(p.GarblerInputs))
 	writeChunk(&buf, encodeOutputHints(p.OutputHints))
 	writeChunk(&buf, encodeCiphertexts(p.Ciphertexts))
@@ -153,6 +150,7 @@ func EncodeRound3(p Round3Payload) ([]byte, error) {
 func DecodeRound3(data []byte) (Round3Payload, error) {
 	reader := bytes.NewReader(data)
 	var payload Round3Payload
+	var err error
 	magic := make([]byte, 2)
 	if _, err := io.ReadFull(reader, magic); err != nil {
 		return Round3Payload{}, err
@@ -163,15 +161,15 @@ func DecodeRound3(data []byte) (Round3Payload, error) {
 	if _, err := io.ReadFull(reader, payload.Key[:]); err != nil {
 		return Round3Payload{}, err
 	}
+	tableBytes := make([]byte, garbledTableByteLen)
+	if _, err := io.ReadFull(reader, tableBytes); err != nil {
+		return Round3Payload{}, err
+	}
+	payload.GarbledTables, err = decodeGarbledTables(tableBytes)
+	if err != nil {
+		return Round3Payload{}, err
+	}
 	chunk, err := readChunk(reader)
-	if err != nil {
-		return Round3Payload{}, err
-	}
-	payload.GarbledTables, err = decodeGarbledTables(chunk)
-	if err != nil {
-		return Round3Payload{}, err
-	}
-	chunk, err = readChunk(reader)
 	if err != nil {
 		return Round3Payload{}, err
 	}
@@ -316,42 +314,61 @@ func decodeLabels(data []byte) ([]ot.Label, error) {
 	return result, nil
 }
 
-// encodeGarbledTables serializes garbled table rows.
-func encodeGarbledTables(tables [][]ot.Label) ([]byte, error) {
+// encodeGarbledTables serializes garbled table rows directly into buf.
+func encodeGarbledTables(buf *bytes.Buffer, tables [][]ot.Label) error {
 	if len(tables) != len(sha256xorCircuit.Gates) {
-		return nil, fmt.Errorf("sha2pc: garbled table count mismatch %d vs %d",
+		return fmt.Errorf("sha2pc: garbled table count mismatch %d vs %d",
 			len(tables), len(sha256xorCircuit.Gates))
 	}
-	var buf bytes.Buffer
 	var tmp ot.LabelData
+	written := 0
 	for idx, gate := range sha256xorCircuit.Gates {
 		want, err := gateCiphertextCount(gate.Op)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		row := tables[idx]
 		if want == 0 {
 			if len(row) != 0 {
-				return nil, fmt.Errorf("sha2pc: gate %d expected 0 labels got %d",
+				return fmt.Errorf("sha2pc: gate %d expected 0 labels got %d",
 					idx, len(row))
 			}
 			continue
 		}
 		if len(row) != want {
-			return nil, fmt.Errorf("sha2pc: gate %d expected %d labels got %d",
+			return fmt.Errorf("sha2pc: gate %d expected %d labels got %d",
 				idx, want, len(row))
+		}
+	}
+	for idx, gate := range sha256xorCircuit.Gates {
+		want, err := gateCiphertextCount(gate.Op)
+		if err != nil {
+			return err
+		}
+		row := tables[idx]
+		if want == 0 {
+			continue
 		}
 		for _, label := range row {
 			label.GetData(&tmp)
 			buf.Write(tmp[:])
+			written += len(tmp)
 		}
 	}
+	if written != garbledTableByteLen {
+		return fmt.Errorf("sha2pc: wrote %d garbled-table bytes, expected %d",
+			written, garbledTableByteLen)
+	}
 
-	return buf.Bytes(), nil
+	return nil
 }
 
 // decodeGarbledTables reconstructs table rows from bytes.
 func decodeGarbledTables(data []byte) ([][]ot.Label, error) {
+	if len(data) != garbledTableByteLen {
+		return nil, fmt.Errorf("sha2pc: garbled table buffer mismatch: got %d want %d",
+			len(data), garbledTableByteLen)
+	}
 	reader := bytes.NewReader(data)
 	result := make([][]ot.Label, len(sha256xorCircuit.Gates))
 	var tmp ot.LabelData
@@ -372,10 +389,6 @@ func decodeGarbledTables(data []byte) ([][]ot.Label, error) {
 		}
 		result[idx] = row
 	}
-	if reader.Len() != 0 {
-		return nil, fmt.Errorf("sha2pc: %d trailing garbled-table bytes", reader.Len())
-	}
-
 	return result, nil
 }
 
@@ -678,22 +691,6 @@ func readFixedBigInt(r *bytes.Reader, byteLen int) (*big.Int, error) {
 	}
 
 	return new(big.Int).SetBytes(tmp), nil
-}
-
-// gateCiphertextCount reports how many ciphertext labels a gate carries.
-func gateCiphertextCount(op circuit.Operation) (int, error) {
-	switch op {
-	case circuit.XOR, circuit.XNOR:
-		return 0, nil
-	case circuit.AND:
-		return 2, nil
-	case circuit.OR:
-		return 3, nil
-	case circuit.INV:
-		return 1, nil
-	default:
-		return 0, fmt.Errorf("sha2pc: unsupported gate operation %v", op)
-	}
 }
 
 // curveByteLen returns the size in bytes of the provided curve's base field.

@@ -3,20 +3,58 @@ package sha2pc
 import (
 	"crypto/elliptic"
 	"fmt"
+
+	"github.com/markkurossi/mpc/circuit"
 )
 
 // CurveP256 is the default curve used for SHA256(XOR) evaluations.
 var CurveP256 = elliptic.P256()
 
-// hashInputBitCount locks the 32-byte preimage size (256 bits).
-const hashInputBitCount = 32 * 8
+const (
+	// hashInputBitCount locks the 32-byte preimage size (256 bits).
+	hashInputBitCount = 32 * 8
 
-// init validates that the circuit matches the expected bit widths.
+	// garbledTableLabelCount is the total number of ciphertext labels emitted by
+	// the SHA256(XOR) garbled circuit (derived from its AND/OR/INV gate counts).
+	garbledTableLabelCount = 42914
+
+	// garbledTableByteLen is the total byte length of all garbled table labels.
+	garbledTableByteLen = garbledTableLabelCount * 16
+)
+
+// init validates that the circuit matches the expected consts.
 func init() {
 	if bits := int(sha256xorCircuit.Inputs[0].Type.Bits); bits != hashInputBitCount {
 		panic(fmt.Sprintf("garbler bit-count mismatch: %d != %d", bits, hashInputBitCount))
 	}
 	if bits := int(sha256xorCircuit.Inputs[1].Type.Bits); bits != hashInputBitCount {
 		panic(fmt.Sprintf("evaluator bit-count mismatch: %d != %d", bits, hashInputBitCount))
+	}
+
+	var labels int
+	for _, gate := range sha256xorCircuit.Gates {
+		count, err := gateCiphertextCount(gate.Op)
+		if err != nil {
+			panic(err)
+		}
+		labels += count
+	}
+	if labels != garbledTableLabelCount {
+		panic(fmt.Sprintf("garbled table label mismatch: %d != %d", labels, garbledTableLabelCount))
+	}
+}
+
+func gateCiphertextCount(op circuit.Operation) (int, error) {
+	switch op {
+	case circuit.XOR, circuit.XNOR:
+		return 0, nil
+	case circuit.AND:
+		return 2, nil
+	case circuit.OR:
+		return 3, nil
+	case circuit.INV:
+		return 1, nil
+	default:
+		return 0, fmt.Errorf("sha2pc: unsupported gate operation %v", op)
 	}
 }
