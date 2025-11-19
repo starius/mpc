@@ -8,6 +8,7 @@ import (
 	"io"
 	"math/big"
 
+	"github.com/markkurossi/mpc/circuit"
 	"github.com/markkurossi/mpc/ot"
 )
 
@@ -31,8 +32,8 @@ const (
 var byteOrder = binary.BigEndian
 
 // chunkSizeLimit bounds a single encoded chunk. The largest payload today
-// (Round 3) is ~1.22MB, so 2MB leaves ample headroom without risking OOM.
-const chunkSizeLimit = 2 * 1024 * 1024
+// (Round 3) is ~0.7MB, so 1MB leaves ample headroom without risking OOM.
+const chunkSizeLimit = 1 * 1024 * 1024
 
 // EncodeRound1 turns a Round1Payload into bytes.
 func EncodeRound1(curve elliptic.Curve, p Round1Payload) ([]byte, error) {
@@ -136,7 +137,11 @@ func EncodeRound3(p Round3Payload) ([]byte, error) {
 	var buf bytes.Buffer
 	buf.Write([]byte(magicRound3))
 	buf.Write(p.Key[:])
-	writeChunk(&buf, encodeGarbledTables(p.GarbledTables))
+	tables, err := encodeGarbledTables(p.GarbledTables)
+	if err != nil {
+		return nil, err
+	}
+	writeChunk(&buf, tables)
 	writeChunk(&buf, encodeLabels(p.GarblerInputs))
 	writeChunk(&buf, encodeOutputHints(p.OutputHints))
 	writeChunk(&buf, encodeCiphertexts(p.Ciphertexts))
@@ -312,47 +317,63 @@ func decodeLabels(data []byte) ([]ot.Label, error) {
 }
 
 // encodeGarbledTables serializes garbled table rows.
-func encodeGarbledTables(tables [][]ot.Label) []byte {
+func encodeGarbledTables(tables [][]ot.Label) ([]byte, error) {
+	if len(tables) != len(sha256xorCircuit.Gates) {
+		return nil, fmt.Errorf("sha2pc: garbled table count mismatch %d vs %d",
+			len(tables), len(sha256xorCircuit.Gates))
+	}
 	var buf bytes.Buffer
-	var header [4]byte
-	byteOrder.PutUint32(header[:], uint32(len(tables)))
-	buf.Write(header[:])
-	for _, row := range tables {
-		byteOrder.PutUint32(header[:], uint32(len(row)))
-		buf.Write(header[:])
+	var tmp ot.LabelData
+	for idx, gate := range sha256xorCircuit.Gates {
+		want, err := gateCiphertextCount(gate.Op)
+		if err != nil {
+			return nil, err
+		}
+		row := tables[idx]
+		if want == 0 {
+			if len(row) != 0 {
+				return nil, fmt.Errorf("sha2pc: gate %d expected 0 labels got %d",
+					idx, len(row))
+			}
+			continue
+		}
+		if len(row) != want {
+			return nil, fmt.Errorf("sha2pc: gate %d expected %d labels got %d",
+				idx, want, len(row))
+		}
 		for _, label := range row {
-			var tmp ot.LabelData
 			label.GetData(&tmp)
 			buf.Write(tmp[:])
 		}
 	}
 
-	return buf.Bytes()
+	return buf.Bytes(), nil
 }
 
 // decodeGarbledTables reconstructs table rows from bytes.
 func decodeGarbledTables(data []byte) ([][]ot.Label, error) {
 	reader := bytes.NewReader(data)
-	var header [4]byte
-	if _, err := reader.Read(header[:]); err != nil {
-		return nil, err
-	}
-	count := int(byteOrder.Uint32(header[:]))
-	result := make([][]ot.Label, count)
+	result := make([][]ot.Label, len(sha256xorCircuit.Gates))
 	var tmp ot.LabelData
-	for i := 0; i < count; i++ {
-		if _, err := reader.Read(header[:]); err != nil {
+	for idx, gate := range sha256xorCircuit.Gates {
+		want, err := gateCiphertextCount(gate.Op)
+		if err != nil {
 			return nil, err
 		}
-		rowLen := int(byteOrder.Uint32(header[:]))
-		row := make([]ot.Label, rowLen)
-		for j := 0; j < rowLen; j++ {
+		if want == 0 {
+			continue
+		}
+		row := make([]ot.Label, want)
+		for j := 0; j < want; j++ {
 			if _, err := reader.Read(tmp[:]); err != nil {
 				return nil, err
 			}
 			row[j].SetData(&tmp)
 		}
-		result[i] = row
+		result[idx] = row
+	}
+	if reader.Len() != 0 {
+		return nil, fmt.Errorf("sha2pc: %d trailing garbled-table bytes", reader.Len())
 	}
 
 	return result, nil
@@ -657,6 +678,22 @@ func readFixedBigInt(r *bytes.Reader, byteLen int) (*big.Int, error) {
 	}
 
 	return new(big.Int).SetBytes(tmp), nil
+}
+
+// gateCiphertextCount reports how many ciphertext labels a gate carries.
+func gateCiphertextCount(op circuit.Operation) (int, error) {
+	switch op {
+	case circuit.XOR, circuit.XNOR:
+		return 0, nil
+	case circuit.AND:
+		return 2, nil
+	case circuit.OR:
+		return 3, nil
+	case circuit.INV:
+		return 1, nil
+	default:
+		return 0, fmt.Errorf("sha2pc: unsupported gate operation %v", op)
+	}
 }
 
 // curveByteLen returns the size in bytes of the provided curve's base field.

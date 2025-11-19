@@ -69,7 +69,7 @@ func Example() {
 	// round2 choices=256
 	// round2 encode=8237 session=8306
 	// round3 ciphertexts=256 tables=127806
-	// round3 encode=1218383
+	// round3 encode=707155
 	// round4 digest-prefix=4b2f7457
 	// evaluator hash=4b2f74579fc7c778745121996f604371a326dc5174f9851706032626668abf2e
 }

@@ -160,16 +160,31 @@ func sampleRound3() Round3Payload {
 		key[i] = byte(i)
 	}
 
+	tables := make([][]ot.Label, len(sha256xorCircuit.Gates))
+	var nextLabel uint64 = 10
+	for idx, gate := range sha256xorCircuit.Gates {
+		count, err := gateCiphertextCount(gate.Op)
+		if err != nil {
+			panic(err)
+		}
+		if count == 0 {
+			continue
+		}
+		row := make([]ot.Label, count)
+		for j := 0; j < count; j++ {
+			row[j] = sampleLabel(nextLabel)
+			nextLabel++
+		}
+		tables[idx] = row
+	}
+
 	return Round3Payload{
 		Ciphertexts: []ot.LabelCiphertext{
 			{Zero: newLabelData(1), One: newLabelData(2)},
 			{Zero: newLabelData(3), One: newLabelData(4)},
 		},
-		Key: key,
-		GarbledTables: [][]ot.Label{
-			{sampleLabel(10), sampleLabel(11)},
-			{sampleLabel(12)},
-		},
+		Key:           key,
+		GarbledTables: tables,
 		GarblerInputs: []ot.Label{
 			sampleLabel(20), sampleLabel(21),
 		},
