@@ -30,6 +30,10 @@ const (
 
 var byteOrder = binary.BigEndian
 
+// chunkSizeLimit bounds a single encoded chunk. The largest payload today
+// (Round 3) is ~1.22MB, so 2MB leaves ample headroom without risking OOM.
+const chunkSizeLimit = 2 * 1024 * 1024
+
 // EncodeRound1 turns a Round1Payload into bytes.
 func EncodeRound1(curve elliptic.Curve, p Round1Payload) ([]byte, error) {
 	if curve == nil {
@@ -598,6 +602,9 @@ func readChunk(r *bytes.Reader) ([]byte, error) {
 	length, err := binary.ReadUvarint(r)
 	if err != nil {
 		return nil, err
+	}
+	if length > chunkSizeLimit {
+		return nil, fmt.Errorf("chunk length %d exceeds limit %d", length, chunkSizeLimit)
 	}
 	if int64(length) > int64(r.Len()) {
 		return nil, fmt.Errorf("chunk length %d exceeds remaining %d", length, r.Len())

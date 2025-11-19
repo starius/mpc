@@ -1,7 +1,9 @@
 package sha2pc
 
 import (
+	"bytes"
 	"crypto/elliptic"
+	"encoding/binary"
 	"math/big"
 	"testing"
 
@@ -123,6 +125,18 @@ func TestCurveByteLen(t *testing.T) {
 	}
 	if _, err := curveByteLen(nil); err != errNilCurve {
 		t.Fatalf("curveByteLen(nil) = %v want errNilCurve", err)
+	}
+}
+
+// TestReadChunkLimit ensures oversized chunks fail early.
+func TestReadChunkLimit(t *testing.T) {
+	var buf bytes.Buffer
+	var tmp [binary.MaxVarintLen64]byte
+	n := binary.PutUvarint(tmp[:], chunkSizeLimit+1)
+	buf.Write(tmp[:n])
+	reader := bytes.NewReader(buf.Bytes())
+	if _, err := readChunk(reader); err == nil {
+		t.Fatalf("readChunk succeeded on oversized chunk")
 	}
 }
 
