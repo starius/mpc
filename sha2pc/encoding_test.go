@@ -1,6 +1,7 @@
 package sha2pc
 
 import (
+	"crypto/elliptic"
 	"math/big"
 	"testing"
 
@@ -97,6 +98,31 @@ func TestEvaluatorSessionEncoding(t *testing.T) {
 	}
 	if !evaluatorSessionsEqual(session, got) {
 		t.Fatalf("evaluator session mismatch")
+	}
+}
+
+// TestCurveByteLen verifies curveByteLen returns correct sizes.
+func TestCurveByteLen(t *testing.T) {
+	cases := []struct {
+		curve elliptic.Curve
+		want  int
+	}{
+		{elliptic.P224(), 28},
+		{elliptic.P256(), 32},
+		{elliptic.P384(), 48},
+		{elliptic.P521(), 66},
+	}
+	for _, tc := range cases {
+		got, err := curveByteLen(tc.curve)
+		if err != nil {
+			t.Fatalf("curveByteLen(%s): %v", tc.curve.Params().Name, err)
+		}
+		if got != tc.want {
+			t.Fatalf("curveByteLen(%s) = %d want %d", tc.curve.Params().Name, got, tc.want)
+		}
+	}
+	if _, err := curveByteLen(nil); err != errNilCurve {
+		t.Fatalf("curveByteLen(nil) = %v want errNilCurve", err)
 	}
 }
 

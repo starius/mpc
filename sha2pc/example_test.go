@@ -65,7 +65,7 @@ func Example() {
 
 	// Output:
 	// round1 curve=P-256
-	// round1 encode=79 session=175
+	// round1 encode=75 session=175
 	// round2 choices=256
 	// round2 encode=8243 session=8311
 	// round3 ciphertexts=256 tables=127806

@@ -37,7 +37,9 @@ func EncodeRound1(curve elliptic.Curve, p Round1Payload) ([]byte, error) {
 	}
 	var buf bytes.Buffer
 	buf.Write([]byte(magicRound1))
-	writeChunk(&buf, encodeOTSetup(curve, p.OT))
+	if err := encodeOTSetup(&buf, curve, p.OT); err != nil {
+		return nil, err
+	}
 
 	return buf.Bytes(), nil
 }
@@ -56,11 +58,8 @@ func DecodeRound1(curve elliptic.Curve, data []byte) (Round1Payload, error) {
 	if string(magic) != magicRound1 {
 		return Round1Payload{}, fmt.Errorf("invalid round1 magic")
 	}
-	chunk, err := readChunk(reader)
-	if err != nil {
-		return Round1Payload{}, err
-	}
-	payload.OT, err = decodeOTSetup(curve, chunk)
+	var err error
+	payload.OT, err = decodeOTSetup(curve, reader)
 	if err != nil {
 		return Round1Payload{}, err
 	}
@@ -81,7 +80,9 @@ func EncodeRound2(curve elliptic.Curve, p Round2Payload) ([]byte, error) {
 	var buf bytes.Buffer
 	buf.Write([]byte(magicRound2))
 	writeChunk(&buf, []byte(name))
-	buf.Write(encodePoints(curve, p.Choices))
+	if err := encodePoints(curve, &buf, p.Choices); err != nil {
+		return nil, err
+	}
 
 	return buf.Bytes(), nil
 }
@@ -197,7 +198,11 @@ func EncodeGarblerSession(curve elliptic.Curve, session *GarblerSession) ([]byte
 
 	var buf bytes.Buffer
 	buf.Write([]byte(magicGarblerSession))
-	writeChunk(&buf, encodeCOSenderSetup(curve, session.senderSetup))
+	setup, err := encodeCOSenderSetup(curve, session.senderSetup)
+	if err != nil {
+		return nil, err
+	}
+	writeChunk(&buf, setup)
 
 	return buf.Bytes(), nil
 }
@@ -237,7 +242,11 @@ func EncodeEvaluatorSession(curve elliptic.Curve, session *EvaluatorSession) ([]
 
 	var buf bytes.Buffer
 	buf.Write([]byte(magicEvalSession))
-	writeChunk(&buf, encodeChoiceBundle(curve, session.choiceBundle))
+	data, err := encodeChoiceBundle(curve, session.choiceBundle)
+	if err != nil {
+		return nil, err
+	}
+	writeChunk(&buf, data)
 
 	return buf.Bytes(), nil
 }
@@ -386,22 +395,24 @@ func decodeOutputHints(data []byte) ([]ot.Wire, error) {
 	return result, nil
 }
 
-// encodePoints serializes EC points using fixed-width X coordinates plus packed
-// Y parities to keep sizes uniform regardless of random inputs.
-func encodePoints(curve elliptic.Curve, points []ot.ECPoint) []byte {
-	byteLen := mustCurveByteLen(curve)
-	var buf bytes.Buffer
+// encodePoints serializes EC points into buf using fixed-width X coordinates
+// plus packed Y parities to keep sizes uniform regardless of random inputs.
+func encodePoints(curve elliptic.Curve, buf *bytes.Buffer, points []ot.ECPoint) error {
+	byteLen, err := curveByteLen(curve)
+	if err != nil {
+		return err
+	}
 	var header [4]byte
 	byteOrder.PutUint32(header[:], uint32(len(points)))
 	buf.Write(header[:])
 	for _, p := range points {
-		writeFixedBigInt(&buf, byteLen, p.X)
+		writeFixedBigInt(buf, byteLen, p.X)
 	}
 
 	signs := packPointSigns(points)
-	writeChunk(&buf, signs)
+	writeChunk(buf, signs)
 
-	return buf.Bytes()
+	return nil
 }
 
 // decodePoints rebuilds EC points from compressed X coordinates and sign bits.
@@ -516,26 +527,34 @@ func decodeCiphertexts(data []byte) ([]ot.LabelCiphertext, error) {
 }
 
 // encodeOTSetup serializes the OT sender setup.
-func encodeOTSetup(curve elliptic.Curve, otSetup OTSenderSetup) []byte {
-	var buf bytes.Buffer
+func encodeOTSetup(buf *bytes.Buffer, curve elliptic.Curve, otSetup OTSenderSetup) error {
+	if curve == nil {
+		return errNilCurve
+	}
 	name := curve.Params().Name
 	if otSetup.CurveName == "" {
 		otSetup.CurveName = name
 	}
-	writeChunk(&buf, []byte(otSetup.CurveName))
-	byteLen := mustCurveByteLen(curve)
-	writeFixedBigInt(&buf, byteLen, otSetup.A.X)
-	writeFixedBigInt(&buf, byteLen, otSetup.A.Y)
+	if otSetup.CurveName != name {
+		return fmt.Errorf("sha2pc: OT setup curve mismatch %s vs %s",
+			otSetup.CurveName, name)
+	}
+	byteLen, err := curveByteLen(curve)
+	if err != nil {
+		return err
+	}
+	writeChunk(buf, []byte(otSetup.CurveName))
+	writeFixedBigInt(buf, byteLen, otSetup.A.X)
+	writeFixedBigInt(buf, byteLen, otSetup.A.Y)
 
-	return buf.Bytes()
+	return nil
 }
 
 // decodeOTSetup rebuilds the OT sender setup.
-func decodeOTSetup(curve elliptic.Curve, data []byte) (OTSenderSetup, error) {
+func decodeOTSetup(curve elliptic.Curve, reader *bytes.Reader) (OTSenderSetup, error) {
 	if curve == nil {
 		return OTSenderSetup{}, errNilCurve
 	}
-	reader := bytes.NewReader(data)
 	name, err := readChunk(reader)
 	if err != nil {
 		return OTSenderSetup{}, err
@@ -544,7 +563,10 @@ func decodeOTSetup(curve elliptic.Curve, data []byte) (OTSenderSetup, error) {
 		return OTSenderSetup{}, fmt.Errorf("sha2pc: OT setup curve mismatch %s vs %s",
 			string(name), curve.Params().Name)
 	}
-	byteLen := mustCurveByteLen(curve)
+	byteLen, err := curveByteLen(curve)
+	if err != nil {
+		return OTSenderSetup{}, err
+	}
 	x, err := readFixedBigInt(reader, byteLen)
 	if err != nil {
 		return OTSenderSetup{}, err
@@ -608,6 +630,7 @@ func readBigInt(r *bytes.Reader) (*big.Int, error) {
 	return new(big.Int).SetBytes(data), nil
 }
 
+// writeFixedBigInt writes v into buf using exactly byteLen big-endian bytes.
 func writeFixedBigInt(buf *bytes.Buffer, byteLen int, v *big.Int) {
 	tmp := make([]byte, byteLen)
 	if v != nil {
@@ -627,6 +650,7 @@ func readFixedBigInt(r *bytes.Reader, byteLen int) (*big.Int, error) {
 	return new(big.Int).SetBytes(tmp), nil
 }
 
+// curveByteLen returns the size in bytes of the provided curve's base field.
 func curveByteLen(curve elliptic.Curve) (int, error) {
 	if curve == nil {
 		return 0, errNilCurve
@@ -635,30 +659,32 @@ func curveByteLen(curve elliptic.Curve) (int, error) {
 	return (curve.Params().BitSize + 7) / 8, nil
 }
 
-func mustCurveByteLen(curve elliptic.Curve) int {
-	l, err := curveByteLen(curve)
-	if err != nil {
-		panic(err)
-	}
-	return l
-}
-
 // encodeCOSenderSetup serializes the CO sender setup.
-func encodeCOSenderSetup(curve elliptic.Curve, setup ot.COSenderSetup) []byte {
-	var buf bytes.Buffer
+func encodeCOSenderSetup(curve elliptic.Curve, setup ot.COSenderSetup) ([]byte, error) {
+	if curve == nil {
+		return nil, errNilCurve
+	}
 	name := curve.Params().Name
 	if setup.CurveName == "" {
 		setup.CurveName = name
 	}
+	if setup.CurveName != name {
+		return nil, fmt.Errorf("sha2pc: CO sender curve mismatch %s vs %s",
+			setup.CurveName, name)
+	}
+	byteLen, err := curveByteLen(curve)
+	if err != nil {
+		return nil, err
+	}
+	var buf bytes.Buffer
 	writeChunk(&buf, []byte(setup.CurveName))
-	byteLen := mustCurveByteLen(curve)
 	writeFixedBigInt(&buf, byteLen, setup.Scalar)
 	writeFixedBigInt(&buf, byteLen, setup.Ax)
 	writeFixedBigInt(&buf, byteLen, setup.Ay)
 	writeFixedBigInt(&buf, byteLen, setup.AaInvX)
 	writeFixedBigInt(&buf, byteLen, setup.AaInvY)
 
-	return buf.Bytes()
+	return buf.Bytes(), nil
 }
 
 // decodeCOSenderSetup rebuilds a CO sender setup from bytes.
@@ -677,7 +703,10 @@ func decodeCOSenderSetup(curve elliptic.Curve, data []byte) (ot.COSenderSetup, e
 			string(name), curve.Params().Name)
 	}
 
-	byteLen := mustCurveByteLen(curve)
+	byteLen, err := curveByteLen(curve)
+	if err != nil {
+		return ot.COSenderSetup{}, err
+	}
 
 	scalar, err := readFixedBigInt(reader, byteLen)
 	if err != nil {
@@ -715,13 +744,24 @@ func decodeCOSenderSetup(curve elliptic.Curve, data []byte) (ot.COSenderSetup, e
 }
 
 // encodeChoiceBundle serializes a CO choice bundle.
-func encodeChoiceBundle(curve elliptic.Curve, bundle ot.COChoiceBundle) []byte {
-	var buf bytes.Buffer
-	if bundle.CurveName == "" {
-		bundle.CurveName = curve.Params().Name
+func encodeChoiceBundle(curve elliptic.Curve, bundle ot.COChoiceBundle) ([]byte, error) {
+	if curve == nil {
+		return nil, errNilCurve
 	}
+	name := curve.Params().Name
+	if bundle.CurveName == "" {
+		bundle.CurveName = name
+	}
+	if bundle.CurveName != name {
+		return nil, fmt.Errorf("sha2pc: CO choice curve mismatch %s vs %s",
+			bundle.CurveName, name)
+	}
+	byteLen, err := curveByteLen(curve)
+	if err != nil {
+		return nil, err
+	}
+	var buf bytes.Buffer
 	writeChunk(&buf, []byte(bundle.CurveName))
-	byteLen := mustCurveByteLen(curve)
 	writeFixedBigInt(&buf, byteLen, bundle.Ax)
 	writeFixedBigInt(&buf, byteLen, bundle.Ay)
 
@@ -736,7 +776,7 @@ func encodeChoiceBundle(curve elliptic.Curve, bundle ot.COChoiceBundle) []byte {
 	buf.Write(header[:])
 	buf.Write(bitsToBytesLittle(bundle.Bits))
 
-	return buf.Bytes()
+	return buf.Bytes(), nil
 }
 
 // decodeChoiceBundle restores a CO choice bundle from bytes.
@@ -754,7 +794,10 @@ func decodeChoiceBundle(curve elliptic.Curve, data []byte) (ot.COChoiceBundle, e
 		return ot.COChoiceBundle{}, fmt.Errorf("sha2pc: CO choice curve mismatch %s vs %s",
 			string(name), curve.Params().Name)
 	}
-	byteLen := mustCurveByteLen(curve)
+	byteLen, err := curveByteLen(curve)
+	if err != nil {
+		return ot.COChoiceBundle{}, err
+	}
 
 	ax, err := readFixedBigInt(reader, byteLen)
 	if err != nil {
