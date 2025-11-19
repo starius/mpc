@@ -1,6 +1,7 @@
 package sha2pc
 
 import (
+	crand "crypto/rand"
 	"fmt"
 )
 
@@ -12,14 +13,7 @@ func Example() {
 		b[i] = byte(len(a) - i)
 	}
 
-	// Deterministic readers keep the printed sizes stable across runs since
-	// encoding lengths depend on the exact curve points generated.
-	// In real code use crypto/rand.Reader.
-	garblerRound1Rand := newDeterministicReader([]byte("example-g-r1"))
-	garblerRound3Rand := newDeterministicReader([]byte("example-g-r3"))
-	evaluatorRand := newDeterministicReader([]byte("example-eval"))
-
-	msg1, gState, err := GarblerRound1(garblerRound1Rand, CurveP256)
+	msg1, gState, err := GarblerRound1(crand.Reader, CurveP256)
 	if err != nil {
 		panic(err)
 	}
@@ -34,7 +28,7 @@ func Example() {
 	}
 	fmt.Printf("round1 encode=%d session=%d\n", len(r1Bytes), len(gSessionBytes))
 
-	msg2, eState, err := EvaluatorRound2(evaluatorRand, CurveP256, msg1, b)
+	msg2, eState, err := EvaluatorRound2(crand.Reader, CurveP256, msg1, b)
 	if err != nil {
 		panic(err)
 	}
@@ -49,7 +43,7 @@ func Example() {
 	}
 	fmt.Printf("round2 encode=%d session=%d\n", len(r2Bytes), len(eSessionBytes))
 
-	msg3, err := GarblerRound3(garblerRound3Rand, CurveP256, gState, a, msg2)
+	msg3, err := GarblerRound3(crand.Reader, CurveP256, gState, a, msg2)
 	if err != nil {
 		panic(err)
 	}
@@ -73,7 +67,7 @@ func Example() {
 	// round1 curve=P-256
 	// round1 encode=87 session=195
 	// round2 choices=256
-	// round2 encode=9258 session=9343
+	// round2 encode=8234 session=8319
 	// round3 ciphertexts=256 tables=127806
 	// round3 encode=1218390
 	// round4 digest-prefix=4b2f7457

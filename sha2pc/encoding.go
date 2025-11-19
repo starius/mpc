@@ -350,15 +350,29 @@ func decodeOutputHints(data []byte) ([]ot.Wire, error) {
 	return result, nil
 }
 
-// encodePoints serializes EC points, storing each X coordinate and a packed set
-// of Y parities to exploit standard compressed-point encoding.
+// encodePoints serializes EC points using fixed-width X coordinates plus packed
+// Y parities to keep sizes uniform regardless of random inputs.
 func encodePoints(points []ot.ECPoint) []byte {
 	var buf bytes.Buffer
 	var header [4]byte
 	byteOrder.PutUint32(header[:], uint32(len(points)))
 	buf.Write(header[:])
-	for _, p := range points {
-		writeBigInt(&buf, p.X)
+
+	if len(points) > 0 {
+		curve := CurveP256
+		if curve == nil {
+			panic("sha2pc: CurveP256 is nil")
+		}
+		byteLen := (curve.Params().BitSize + 7) / 8
+		tmp := make([]byte, byteLen)
+		for _, p := range points {
+			for i := range tmp {
+				tmp[i] = 0
+			}
+			xBytes := p.X.Bytes()
+			copy(tmp[byteLen-len(xBytes):], xBytes)
+			buf.Write(tmp)
+		}
 	}
 
 	signs := packPointSigns(points)
@@ -375,13 +389,18 @@ func decodePoints(data []byte) ([]ot.ECPoint, error) {
 		return nil, err
 	}
 	count := int(byteOrder.Uint32(header[:]))
+	curve := CurveP256
+	if curve == nil {
+		return nil, errNilCurve
+	}
+	byteLen := (curve.Params().BitSize + 7) / 8
+	tmp := make([]byte, byteLen)
 	xs := make([]*big.Int, count)
 	for i := 0; i < count; i++ {
-		x, err := readBigInt(reader)
-		if err != nil {
+		if _, err := io.ReadFull(reader, tmp); err != nil {
 			return nil, err
 		}
-		xs[i] = x
+		xs[i] = new(big.Int).SetBytes(tmp)
 	}
 	signs, err := readChunk(reader)
 	if err != nil {
@@ -390,10 +409,6 @@ func decodePoints(data []byte) ([]ot.ECPoint, error) {
 	if len(signs)*8 < count {
 		return nil, fmt.Errorf("round2 sign buffer too short: have %d bits need %d", len(signs)*8, count)
 	}
-	if CurveP256 == nil {
-		return nil, errNilCurve
-	}
-	byteLen := (CurveP256.Params().BitSize + 7) / 8
 	result := make([]ot.ECPoint, count)
 	for i := 0; i < count; i++ {
 		odd := pointSign(signs, i)
@@ -405,8 +420,7 @@ func decodePoints(data []byte) ([]ot.ECPoint, error) {
 		}
 		xBytes := xs[i].Bytes()
 		copy(compressed[1+byteLen-len(xBytes):], xBytes)
-
-		x, y := elliptic.UnmarshalCompressed(CurveP256, compressed)
+		x, y := elliptic.UnmarshalCompressed(curve, compressed)
 		if x == nil || y == nil {
 			return nil, fmt.Errorf("failed to decompress evaluator choice %d", i)
 		}
@@ -623,8 +637,21 @@ func encodeChoiceBundle(bundle ot.COChoiceBundle) []byte {
 	var header [4]byte
 	byteOrder.PutUint32(header[:], uint32(len(bundle.Scalars)))
 	buf.Write(header[:])
-	for _, scalar := range bundle.Scalars {
-		writeBigInt(&buf, scalar)
+	if len(bundle.Scalars) > 0 {
+		curve := CurveP256
+		if curve == nil {
+			panic("sha2pc: CurveP256 is nil")
+		}
+		byteLen := (curve.Params().BitSize + 7) / 8
+		tmp := make([]byte, byteLen)
+		for _, scalar := range bundle.Scalars {
+			for i := range tmp {
+				tmp[i] = 0
+			}
+			sBytes := scalar.Bytes()
+			copy(tmp[byteLen-len(sBytes):], sBytes)
+			buf.Write(tmp)
+		}
 	}
 
 	byteOrder.PutUint32(header[:], uint32(len(bundle.Bits)))
@@ -660,12 +687,19 @@ func decodeChoiceBundle(data []byte) (ot.COChoiceBundle, error) {
 
 	scalarCount := int(byteOrder.Uint32(header[:]))
 	scalars := make([]*big.Int, scalarCount)
-	for i := 0; i < scalarCount; i++ {
-		value, err := readBigInt(reader)
-		if err != nil {
-			return ot.COChoiceBundle{}, err
+	if scalarCount > 0 {
+		curve := CurveP256
+		if curve == nil {
+			return ot.COChoiceBundle{}, errNilCurve
 		}
-		scalars[i] = value
+		byteLen := (curve.Params().BitSize + 7) / 8
+		tmp := make([]byte, byteLen)
+		for i := 0; i < scalarCount; i++ {
+			if _, err := io.ReadFull(reader, tmp); err != nil {
+				return ot.COChoiceBundle{}, err
+			}
+			scalars[i] = new(big.Int).SetBytes(tmp)
+		}
 	}
 	if _, err := reader.Read(header[:]); err != nil {
 		return ot.COChoiceBundle{}, err
