@@ -139,9 +139,9 @@ func EncodeRound3(p Round3Payload) ([]byte, error) {
 	if err := encodeGarbledTables(&buf, p.GarbledTables); err != nil {
 		return nil, err
 	}
-	writeChunk(&buf, encodeLabels(p.GarblerInputs))
-	writeChunk(&buf, encodeOutputHints(p.OutputHints))
-	writeChunk(&buf, encodeCiphertexts(p.Ciphertexts))
+	encodeLabels(&buf, p.GarblerInputs)
+	encodeOutputHints(&buf, p.OutputHints)
+	encodeCiphertexts(&buf, p.Ciphertexts)
 
 	return buf.Bytes(), nil
 }
@@ -286,15 +286,13 @@ func DecodeEvaluatorSession(curve elliptic.Curve, data []byte) (*EvaluatorSessio
 }
 
 // encodeLabels flattens all labels into raw bytes.
-func encodeLabels(labels []ot.Label) []byte {
-	var buf bytes.Buffer
+func encodeLabels(buf *bytes.Buffer, labels []ot.Label) {
 	var tmp ot.LabelData
-	for _, l := range labels {
-		l.GetData(&tmp)
+	writeChunkLen(buf, len(labels)*len(tmp))
+	for _, label := range labels {
+		label.GetData(&tmp)
 		buf.Write(tmp[:])
 	}
-
-	return buf.Bytes()
 }
 
 // decodeLabels rebuilds labels from their byte form.
@@ -393,9 +391,10 @@ func decodeGarbledTables(data []byte) ([][]ot.Label, error) {
 }
 
 // encodeOutputHints serializes every output wire.
-func encodeOutputHints(wires []ot.Wire) []byte {
-	var buf bytes.Buffer
+func encodeOutputHints(buf *bytes.Buffer, wires []ot.Wire) {
 	var tmp ot.LabelData
+	const labelSize = len(ot.LabelData{})
+	writeChunkLen(buf, 4+len(wires)*2*labelSize)
 	var header [4]byte
 	byteOrder.PutUint32(header[:], uint32(len(wires)))
 	buf.Write(header[:])
@@ -405,8 +404,6 @@ func encodeOutputHints(wires []ot.Wire) []byte {
 		wire.L1.GetData(&tmp)
 		buf.Write(tmp[:])
 	}
-
-	return buf.Bytes()
 }
 
 // decodeOutputHints rebuilds output wires.
@@ -530,8 +527,9 @@ func pointSign(signs []byte, idx int) bool {
 }
 
 // encodeCiphertexts serializes OT ciphertexts.
-func encodeCiphertexts(ct []ot.LabelCiphertext) []byte {
-	var buf bytes.Buffer
+func encodeCiphertexts(buf *bytes.Buffer, ct []ot.LabelCiphertext) {
+	const block = len(ot.LabelCiphertext{}.Zero)
+	writeChunkLen(buf, 4+len(ct)*2*block)
 	var header [4]byte
 	byteOrder.PutUint32(header[:], uint32(len(ct)))
 	buf.Write(header[:])
@@ -539,8 +537,6 @@ func encodeCiphertexts(ct []ot.LabelCiphertext) []byte {
 		buf.Write(c.Zero[:])
 		buf.Write(c.One[:])
 	}
-
-	return buf.Bytes()
 }
 
 // decodeCiphertexts rebuilds OT ciphertexts.
@@ -625,10 +621,14 @@ func decodeOTSetup(curve elliptic.Curve, reader *bytes.Reader) (OTSenderSetup, e
 
 // writeChunk writes a length-prefixed byte slice.
 func writeChunk(buf *bytes.Buffer, data []byte) {
-	var scratch [binary.MaxVarintLen64]byte
-	n := binary.PutUvarint(scratch[:], uint64(len(data)))
-	buf.Write(scratch[:n])
+	writeChunkLen(buf, len(data))
 	buf.Write(data)
+}
+
+func writeChunkLen(buf *bytes.Buffer, length int) {
+	var scratch [binary.MaxVarintLen64]byte
+	n := binary.PutUvarint(scratch[:], uint64(length))
+	buf.Write(scratch[:n])
 }
 
 // readChunk reads a single length-prefixed byte slice.
