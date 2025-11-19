@@ -10,11 +10,11 @@ import (
 // TestRound1Encoding ensures Round1 payload encoding is lossless.
 func TestRound1Encoding(t *testing.T) {
 	payload := sampleRound1()
-	data, err := EncodeRound1(payload)
+	data, err := EncodeRound1(CurveP256, payload)
 	if err != nil {
 		t.Fatalf("encodeRound1: %v", err)
 	}
-	got, err := DecodeRound1(data)
+	got, err := DecodeRound1(CurveP256, data)
 	if err != nil {
 		t.Fatalf("decodeRound1: %v", err)
 	}
@@ -26,20 +26,24 @@ func TestRound1Encoding(t *testing.T) {
 // TestRound2Encoding ensures Round2 payload encoding is lossless.
 func TestRound2Encoding(t *testing.T) {
 	curve := CurveP256
+	if curve == nil {
+		t.Fatalf("CurveP256 is nil")
+	}
 	gx := new(big.Int).Set(curve.Params().Gx)
 	gy := new(big.Int).Set(curve.Params().Gy)
 	x2, y2 := curve.ScalarBaseMult([]byte{2})
 	payload := Round2Payload{
+		CurveName: curve.Params().Name,
 		Choices: []ot.ECPoint{
 			{X: gx, Y: gy},
 			{X: new(big.Int).Set(x2), Y: new(big.Int).Set(y2)},
 		},
 	}
-	data, err := EncodeRound2(payload)
+	data, err := EncodeRound2(CurveP256, payload)
 	if err != nil {
 		t.Fatalf("encodeRound2: %v", err)
 	}
-	got, err := DecodeRound2(data)
+	got, err := DecodeRound2(CurveP256, data)
 	if err != nil {
 		t.Fatalf("decodeRound2: %v", err)
 	}
@@ -67,11 +71,11 @@ func TestRound3Encoding(t *testing.T) {
 // TestGarblerSessionEncoding ensures GarblerSession encoding is lossless.
 func TestGarblerSessionEncoding(t *testing.T) {
 	session := sampleGarblerSession()
-	data, err := EncodeGarblerSession(session)
+	data, err := EncodeGarblerSession(CurveP256, session)
 	if err != nil {
 		t.Fatalf("EncodeGarblerSession: %v", err)
 	}
-	got, err := DecodeGarblerSession(data)
+	got, err := DecodeGarblerSession(CurveP256, data)
 	if err != nil {
 		t.Fatalf("DecodeGarblerSession: %v", err)
 	}
@@ -83,11 +87,11 @@ func TestGarblerSessionEncoding(t *testing.T) {
 // TestEvaluatorSessionEncoding ensures EvaluatorSession encoding is lossless.
 func TestEvaluatorSessionEncoding(t *testing.T) {
 	session := sampleEvaluatorSession()
-	data, err := EncodeEvaluatorSession(session)
+	data, err := EncodeEvaluatorSession(CurveP256, session)
 	if err != nil {
 		t.Fatalf("EncodeEvaluatorSession: %v", err)
 	}
-	got, err := DecodeEvaluatorSession(data)
+	got, err := DecodeEvaluatorSession(CurveP256, data)
 	if err != nil {
 		t.Fatalf("DecodeEvaluatorSession: %v", err)
 	}
@@ -214,6 +218,9 @@ func otSetupEqual(a, b OTSenderSetup) bool {
 
 // round2Equal compares Round2 payloads.
 func round2Equal(a, b Round2Payload) bool {
+	if a.CurveName != b.CurveName {
+		return false
+	}
 	if len(a.Choices) != len(b.Choices) {
 		return false
 	}

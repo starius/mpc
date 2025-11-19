@@ -2,6 +2,7 @@ package sha2pc
 
 import (
 	"bytes"
+	"crypto/elliptic"
 	crand "crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
@@ -98,11 +99,11 @@ func TestDeterministicTranscript(t *testing.T) {
 		t.Fatalf("EvaluatorRound4: %v", err)
 	}
 
-	enc1, err := EncodeRound1(r1)
+	enc1, err := EncodeRound1(CurveP256, r1)
 	if err != nil {
 		t.Fatalf("EncodeRound1: %v", err)
 	}
-	enc2, err := EncodeRound2(r2)
+	enc2, err := EncodeRound2(CurveP256, r2)
 	if err != nil {
 		t.Fatalf("EncodeRound2: %v", err)
 	}
@@ -117,8 +118,8 @@ func TestDeterministicTranscript(t *testing.T) {
 	finalHash := hex.EncodeToString(final[:])
 
 	const (
-		expRound1 = "1e95f7a3a56cb202b75199712da90714a257145fcca74d2477579f07060b5444"
-		expRound2 = "dd8bd6d06b15ac405163f55af456b2771bc04fdc444e95b3e40b44b8be4f6500"
+		expRound1 = "3ad0a8fea12a222ffb99e54fa898e0e4b2667796f387604c33ac38438340ddfd"
+		expRound2 = "dc9af55c3c63b5b389e30147fd8e50444a0a4f36bdbc1e21c43fa77852d5c771"
 		expRound3 = "3c7aaa2897f21d919d8935427e057038dc965396e6edec87afba102e954ca89c"
 		expFinal  = "4b2f74579fc7c778745121996f604371a326dc5174f9851706032626668abf2e"
 	)
@@ -126,6 +127,121 @@ func TestDeterministicTranscript(t *testing.T) {
 	if r1Hash != expRound1 || r2Hash != expRound2 || r3Hash != expRound3 || finalHash != expFinal {
 		t.Fatalf("unexpected transcript hashes:\nround1=%s\nround2=%s\nround3=%s\nfinal=%s",
 			r1Hash, r2Hash, r3Hash, finalHash)
+	}
+}
+
+// TestPayloadSizesByCurve locks the transcript sizes and hashes for multiple
+// curves while using crypto/rand.Reader (temporarily overridden with
+// deterministic streams so the output stays reproducible).
+func TestPayloadSizesByCurve(t *testing.T) {
+	type seeds struct {
+		garblerRound1 []byte
+		evaluator     []byte
+		garblerRound3 []byte
+	}
+	type expectations struct {
+		round1Len     int
+		round2Len     int
+		round3Len     int
+		garblerLen    int
+		evaluatorLen  int
+		round1Hash    string
+		round2Hash    string
+		round3Hash    string
+		garblerHash   string
+		evaluatorHash string
+		finalHash     string
+		note          string
+	}
+
+	cases := []struct {
+		name   string
+		curve  elliptic.Curve
+		seeds  seeds
+		expect expectations
+	}{
+		{
+			name:  "P-256",
+			curve: CurveP256,
+			seeds: seeds{
+				garblerRound1: []byte("sizes-p256-g1"),
+				evaluator:     []byte("sizes-p256-e2"),
+				garblerRound3: []byte("sizes-p256-g3"),
+			},
+			expect: expectations{
+				round1Len:     79,
+				round2Len:     8243,
+				round3Len:     1218390,
+				garblerLen:    175,
+				evaluatorLen:  8311,
+				round1Hash:    "766a478a5a14738bf8771001186e9516bd5eecd91a2b506a32f507dc2cd3247f",
+				round2Hash:    "0fde78153cd9512d141ad185f3bb41c22d6b2fad64913a69bd00f75cb4d27226",
+				round3Hash:    "14451437827ad0097d3f18e666a34a56e49c91e5b6c276a6d0f7013873df9562",
+				garblerHash:   "6bad5273c360747003157e5315f1e1cc698b920ab24b2fadd8896553919bb1b5",
+				evaluatorHash: "e06c2a650be56f0b9580573cf33036edd605efb3f495c7c860917fd2cb9e17b3",
+				finalHash:     "4b2f74579fc7c778745121996f604371a326dc5174f9851706032626668abf2e",
+			},
+		},
+		{
+			name:  "P-224",
+			curve: elliptic.P224(),
+			seeds: seeds{
+				garblerRound1: []byte("sizes-p224-g1"),
+				evaluator:     []byte("sizes-p224-e2"),
+				garblerRound3: []byte("sizes-p224-g3"),
+			},
+			expect: expectations{
+				round1Len:     71,
+				round2Len:     7219,
+				round3Len:     1218390,
+				garblerLen:    155,
+				evaluatorLen:  7279,
+				round1Hash:    "1896fe04a1948cf1338034675c514d094a2e1e540ce40971089b0b56266ee191",
+				round2Hash:    "636951f5b983911244863543678c7d34162c5087063eaa78fad126f467f3d57d",
+				round3Hash:    "ff2c7a5c6c95437c6c5548ba56301b6d021435a8efbb322ee5dd774fa5bdbd37",
+				garblerHash:   "03c1bf767e145cfbc0b7795831b09030655ca6e6d9c3e61b48de0ad6bb62a722",
+				evaluatorHash: "6bd12fb363bd4ff57f34039c55cca742bb04b7eecd850c9fecf58e7bfab05c86",
+				finalHash:     "4b2f74579fc7c778745121996f604371a326dc5174f9851706032626668abf2e",
+				note:          "P-224 uses 28-byte field elements, so every OT coordinate/scalar shrinks by four bytes, reducing the Round 1/2 payloads and both sessions compared to P-256.",
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			art := generatePayloadArtifacts(t, tc.curve, tc.seeds)
+			if tc.expect.note != "" {
+				t.Log(tc.expect.note)
+			}
+
+			assertLength := func(label string, got, want int) {
+				if got != want {
+					t.Fatalf("%s length mismatch: got %d want %d", label, got, want)
+				}
+			}
+			assertHash := func(label, got, want string) {
+				if got != want {
+					t.Fatalf("%s hash mismatch: got %s want %s", label, got, want)
+				}
+			}
+
+			assertLength("round1", len(art.round1), tc.expect.round1Len)
+			assertLength("round2", len(art.round2), tc.expect.round2Len)
+			assertLength("round3", len(art.round3), tc.expect.round3Len)
+			assertLength("garbler session", len(art.garblerSession), tc.expect.garblerLen)
+			assertLength("evaluator session", len(art.evaluatorSession), tc.expect.evaluatorLen)
+
+			assertHash("round1", hashBytes(art.round1), tc.expect.round1Hash)
+			assertHash("round2", hashBytes(art.round2), tc.expect.round2Hash)
+			assertHash("round3", hashBytes(art.round3), tc.expect.round3Hash)
+			assertHash("garbler session", hashBytes(art.garblerSession), tc.expect.garblerHash)
+			assertHash("evaluator session", hashBytes(art.evaluatorSession), tc.expect.evaluatorHash)
+
+			if final := hex.EncodeToString(art.final[:]); final != tc.expect.finalHash {
+				t.Fatalf("final hash mismatch: got %s want %s", final, tc.expect.finalHash)
+			}
+		})
 	}
 }
 
@@ -163,11 +279,11 @@ func TestSessionIdempotency(t *testing.T) {
 	if !garblerSessionsEqual(garblerSessionA, garblerSessionB) {
 		t.Fatalf("garbler sessions diverged")
 	}
-	garblerBytes, err := EncodeGarblerSession(garblerSessionA)
+	garblerBytes, err := EncodeGarblerSession(CurveP256, garblerSessionA)
 	if err != nil {
 		t.Fatalf("EncodeGarblerSession: %v", err)
 	}
-	garblerRestored, err := DecodeGarblerSession(garblerBytes)
+	garblerRestored, err := DecodeGarblerSession(CurveP256, garblerBytes)
 	if err != nil {
 		t.Fatalf("DecodeGarblerSession: %v", err)
 	}
@@ -193,11 +309,11 @@ func TestSessionIdempotency(t *testing.T) {
 		t.Fatalf("evaluator input mutated")
 	}
 
-	evaluatorBytes, err := EncodeEvaluatorSession(evaluatorSessionA)
+	evaluatorBytes, err := EncodeEvaluatorSession(CurveP256, evaluatorSessionA)
 	if err != nil {
 		t.Fatalf("EncodeEvaluatorSession: %v", err)
 	}
-	evaluatorRestored, err := DecodeEvaluatorSession(evaluatorBytes)
+	evaluatorRestored, err := DecodeEvaluatorSession(CurveP256, evaluatorBytes)
 	if err != nil {
 		t.Fatalf("DecodeEvaluatorSession: %v", err)
 	}
@@ -232,11 +348,11 @@ func TestSessionIdempotency(t *testing.T) {
 		t.Fatalf("round4 results diverged")
 	}
 
-	r1Enc, err := EncodeRound1(round1A)
+	r1Enc, err := EncodeRound1(CurveP256, round1A)
 	if err != nil {
 		t.Fatalf("EncodeRound1: %v", err)
 	}
-	r2Enc, err := EncodeRound2(round2A)
+	r2Enc, err := EncodeRound2(CurveP256, round2A)
 	if err != nil {
 		t.Fatalf("EncodeRound2: %v", err)
 	}
@@ -252,11 +368,11 @@ func TestSessionIdempotency(t *testing.T) {
 	finalHash := hex.EncodeToString(finalA[:])
 
 	const (
-		idemRound1Hash           = "0d070317eccb50f5ab460c20ea035672ab9f4ce11783c2bcc98903bfa7983cee"
-		idemRound2Hash           = "02a7c9d18e15f0c05efb31f67685ac79a80890f6aa4f3b70558c96ea1324f4ff"
+		idemRound1Hash           = "d1d8181b997c1a30d3a912627b06ac4e7741660443c3077dc451285f29a93c53"
+		idemRound2Hash           = "9cb484f45b41f2012686350068a526319604b233132023e2666107885b3ac84c"
 		idemRound3Hash           = "bef0bf40cbdb420b0460d71e22cbbcae799546ea50882b3ffefd502e021fe534"
-		idemGarblerSessionHash   = "00cbbd44b8bb74d4fe9ac921c17870d5d53ab0e240ea196d5203d468a64bb767"
-		idemEvaluatorSessionHash = "7f91a43cf0ded323d9f6aa7d9d8e7f3b0b27cd42867f2a87f1e8a7b0b9b52a3e"
+		idemGarblerSessionHash   = "6c3f20bf31092991bf70b1bc0f5f21e0f68574e2c164c7f4e7a3aa3f2d9d5cf7"
+		idemEvaluatorSessionHash = "638159689ad1d97300dd971fe7899c3fd32faa11acc86eebddd12bae2cf3bc0b"
 		idemFinalHash            = "4b2f74579fc7c778745121996f604371a326dc5174f9851706032626668abf2e"
 	)
 
@@ -338,4 +454,93 @@ func hashBytes(data []byte) string {
 	sum := sha256.Sum256(data)
 
 	return hex.EncodeToString(sum[:])
+}
+
+type payloadArtifacts struct {
+	round1           []byte
+	round2           []byte
+	round3           []byte
+	garblerSession   []byte
+	evaluatorSession []byte
+	final            [sha256.Size]byte
+}
+
+func generatePayloadArtifacts(t *testing.T, curve elliptic.Curve, seeds struct {
+	garblerRound1 []byte
+	evaluator     []byte
+	garblerRound3 []byte
+}) payloadArtifacts {
+	t.Helper()
+
+	var (
+		art payloadArtifacts
+		a   [32]byte
+		b   [32]byte
+	)
+	for i := 0; i < len(a); i++ {
+		a[i] = byte(i)
+		b[i] = byte(len(a) - i)
+	}
+
+	restore := swapCryptoRand(seeds.garblerRound1)
+	msg1, gState, err := GarblerRound1(crand.Reader, curve)
+	restore()
+	if err != nil {
+		t.Fatalf("GarblerRound1: %v", err)
+	}
+	r1Bytes, err := EncodeRound1(curve, msg1)
+	if err != nil {
+		t.Fatalf("EncodeRound1: %v", err)
+	}
+	art.round1 = r1Bytes
+	garblerBytes, err := EncodeGarblerSession(curve, gState)
+	if err != nil {
+		t.Fatalf("EncodeGarblerSession: %v", err)
+	}
+	art.garblerSession = garblerBytes
+
+	restore = swapCryptoRand(seeds.evaluator)
+	msg2, eState, err := EvaluatorRound2(crand.Reader, curve, msg1, b)
+	restore()
+	if err != nil {
+		t.Fatalf("EvaluatorRound2: %v", err)
+	}
+	r2Bytes, err := EncodeRound2(curve, msg2)
+	if err != nil {
+		t.Fatalf("EncodeRound2: %v", err)
+	}
+	art.round2 = r2Bytes
+	evaluatorBytes, err := EncodeEvaluatorSession(curve, eState)
+	if err != nil {
+		t.Fatalf("EncodeEvaluatorSession: %v", err)
+	}
+	art.evaluatorSession = evaluatorBytes
+
+	restore = swapCryptoRand(seeds.garblerRound3)
+	msg3, err := GarblerRound3(crand.Reader, curve, gState, a, msg2)
+	restore()
+	if err != nil {
+		t.Fatalf("GarblerRound3: %v", err)
+	}
+	r3Bytes, err := EncodeRound3(msg3)
+	if err != nil {
+		t.Fatalf("EncodeRound3: %v", err)
+	}
+	art.round3 = r3Bytes
+
+	final, err := EvaluatorRound4(curve, eState, msg3)
+	if err != nil {
+		t.Fatalf("EvaluatorRound4: %v", err)
+	}
+	art.final = final
+
+	return art
+}
+
+func swapCryptoRand(seed []byte) func() {
+	orig := crand.Reader
+	crand.Reader = newDeterministicReader(seed)
+	return func() {
+		crand.Reader = orig
+	}
 }

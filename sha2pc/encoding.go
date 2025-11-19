@@ -31,16 +31,22 @@ const (
 var byteOrder = binary.BigEndian
 
 // EncodeRound1 turns a Round1Payload into bytes.
-func EncodeRound1(p Round1Payload) ([]byte, error) {
+func EncodeRound1(curve elliptic.Curve, p Round1Payload) ([]byte, error) {
+	if curve == nil {
+		return nil, errNilCurve
+	}
 	var buf bytes.Buffer
 	buf.Write([]byte(magicRound1))
-	writeChunk(&buf, encodeOTSetup(p.OT))
+	writeChunk(&buf, encodeOTSetup(curve, p.OT))
 
 	return buf.Bytes(), nil
 }
 
 // DecodeRound1 reconstructs a Round1Payload from bytes.
-func DecodeRound1(data []byte) (Round1Payload, error) {
+func DecodeRound1(curve elliptic.Curve, data []byte) (Round1Payload, error) {
+	if curve == nil {
+		return Round1Payload{}, errNilCurve
+	}
 	reader := bytes.NewReader(data)
 	var payload Round1Payload
 	magic := make([]byte, 2)
@@ -54,25 +60,37 @@ func DecodeRound1(data []byte) (Round1Payload, error) {
 	if err != nil {
 		return Round1Payload{}, err
 	}
-	payload.OT, err = decodeOTSetup(chunk)
+	payload.OT, err = decodeOTSetup(curve, chunk)
 	if err != nil {
 		return Round1Payload{}, err
+	}
+	if payload.OT.CurveName != curve.Params().Name {
+		return Round1Payload{}, fmt.Errorf("sha2pc: round1 curve mismatch %s vs %s",
+			payload.OT.CurveName, curve.Params().Name)
 	}
 
 	return payload, nil
 }
 
 // EncodeRound2 turns a Round2Payload into bytes.
-func EncodeRound2(p Round2Payload) ([]byte, error) {
+func EncodeRound2(curve elliptic.Curve, p Round2Payload) ([]byte, error) {
+	if curve == nil {
+		return nil, errNilCurve
+	}
+	name := curve.Params().Name
 	var buf bytes.Buffer
 	buf.Write([]byte(magicRound2))
-	buf.Write(encodePoints(p.Choices))
+	writeChunk(&buf, []byte(name))
+	buf.Write(encodePoints(curve, p.Choices))
 
 	return buf.Bytes(), nil
 }
 
 // DecodeRound2 reconstructs a Round2Payload.
-func DecodeRound2(data []byte) (Round2Payload, error) {
+func DecodeRound2(curve elliptic.Curve, data []byte) (Round2Payload, error) {
+	if curve == nil {
+		return Round2Payload{}, errNilCurve
+	}
 	reader := bytes.NewReader(data)
 	magic := make([]byte, 2)
 	if _, err := io.ReadFull(reader, magic); err != nil {
@@ -82,17 +100,30 @@ func DecodeRound2(data []byte) (Round2Payload, error) {
 		return Round2Payload{}, fmt.Errorf("invalid round2 magic")
 	}
 
+	nameChunk, err := readChunk(reader)
+	if err != nil {
+		return Round2Payload{}, err
+	}
+	curveName := string(nameChunk)
+	if curveName != curve.Params().Name {
+		return Round2Payload{}, fmt.Errorf("sha2pc: round2 curve mismatch %s vs %s",
+			curveName, curve.Params().Name)
+	}
+
 	rest, err := io.ReadAll(reader)
 	if err != nil {
 		return Round2Payload{}, err
 	}
 
-	points, err := decodePoints(rest)
+	points, err := decodePoints(curve, rest)
 	if err != nil {
 		return Round2Payload{}, err
 	}
 
-	return Round2Payload{Choices: points}, nil
+	return Round2Payload{
+		CurveName: curveName,
+		Choices:   points,
+	}, nil
 }
 
 // EncodeRound3 turns a Round3Payload into bytes.
@@ -159,20 +190,23 @@ func DecodeRound3(data []byte) (Round3Payload, error) {
 }
 
 // EncodeGarblerSession serializes a GarblerSession for persistence.
-func EncodeGarblerSession(session *GarblerSession) ([]byte, error) {
+func EncodeGarblerSession(curve elliptic.Curve, session *GarblerSession) ([]byte, error) {
 	if session == nil {
 		return nil, fmt.Errorf("nil garbler session")
 	}
 
 	var buf bytes.Buffer
 	buf.Write([]byte(magicGarblerSession))
-	writeChunk(&buf, encodeCOSenderSetup(session.senderSetup))
+	writeChunk(&buf, encodeCOSenderSetup(curve, session.senderSetup))
 
 	return buf.Bytes(), nil
 }
 
 // DecodeGarblerSession reconstructs a GarblerSession from bytes.
-func DecodeGarblerSession(data []byte) (*GarblerSession, error) {
+func DecodeGarblerSession(curve elliptic.Curve, data []byte) (*GarblerSession, error) {
+	if curve == nil {
+		return nil, errNilCurve
+	}
 	reader := bytes.NewReader(data)
 	var session GarblerSession
 	magic := make([]byte, 2)
@@ -187,7 +221,7 @@ func DecodeGarblerSession(data []byte) (*GarblerSession, error) {
 	if err != nil {
 		return nil, err
 	}
-	session.senderSetup, err = decodeCOSenderSetup(chunk)
+	session.senderSetup, err = decodeCOSenderSetup(curve, chunk)
 	if err != nil {
 		return nil, err
 	}
@@ -196,21 +230,23 @@ func DecodeGarblerSession(data []byte) (*GarblerSession, error) {
 }
 
 // EncodeEvaluatorSession serializes an EvaluatorSession for persistence.
-func EncodeEvaluatorSession(session *EvaluatorSession) ([]byte, error) {
+func EncodeEvaluatorSession(curve elliptic.Curve, session *EvaluatorSession) ([]byte, error) {
 	if session == nil {
 		return nil, fmt.Errorf("nil evaluator session")
 	}
 
 	var buf bytes.Buffer
 	buf.Write([]byte(magicEvalSession))
-	writeChunk(&buf, encodeChoiceBundle(session.choiceBundle))
+	writeChunk(&buf, encodeChoiceBundle(curve, session.choiceBundle))
 
 	return buf.Bytes(), nil
 }
 
 // DecodeEvaluatorSession reconstructs an EvaluatorSession from bytes.
-
-func DecodeEvaluatorSession(data []byte) (*EvaluatorSession, error) {
+func DecodeEvaluatorSession(curve elliptic.Curve, data []byte) (*EvaluatorSession, error) {
+	if curve == nil {
+		return nil, errNilCurve
+	}
 	reader := bytes.NewReader(data)
 	var session EvaluatorSession
 	magic := make([]byte, 2)
@@ -225,7 +261,7 @@ func DecodeEvaluatorSession(data []byte) (*EvaluatorSession, error) {
 	if err != nil {
 		return nil, err
 	}
-	session.choiceBundle, err = decodeChoiceBundle(chunk)
+	session.choiceBundle, err = decodeChoiceBundle(curve, chunk)
 	if err != nil {
 		return nil, err
 	}
@@ -352,27 +388,14 @@ func decodeOutputHints(data []byte) ([]ot.Wire, error) {
 
 // encodePoints serializes EC points using fixed-width X coordinates plus packed
 // Y parities to keep sizes uniform regardless of random inputs.
-func encodePoints(points []ot.ECPoint) []byte {
+func encodePoints(curve elliptic.Curve, points []ot.ECPoint) []byte {
+	byteLen := mustCurveByteLen(curve)
 	var buf bytes.Buffer
 	var header [4]byte
 	byteOrder.PutUint32(header[:], uint32(len(points)))
 	buf.Write(header[:])
-
-	if len(points) > 0 {
-		curve := CurveP256
-		if curve == nil {
-			panic("sha2pc: CurveP256 is nil")
-		}
-		byteLen := (curve.Params().BitSize + 7) / 8
-		tmp := make([]byte, byteLen)
-		for _, p := range points {
-			for i := range tmp {
-				tmp[i] = 0
-			}
-			xBytes := p.X.Bytes()
-			copy(tmp[byteLen-len(xBytes):], xBytes)
-			buf.Write(tmp)
-		}
+	for _, p := range points {
+		writeFixedBigInt(&buf, byteLen, p.X)
 	}
 
 	signs := packPointSigns(points)
@@ -382,25 +405,27 @@ func encodePoints(points []ot.ECPoint) []byte {
 }
 
 // decodePoints rebuilds EC points from compressed X coordinates and sign bits.
-func decodePoints(data []byte) ([]ot.ECPoint, error) {
+func decodePoints(curve elliptic.Curve, data []byte) ([]ot.ECPoint, error) {
+	if curve == nil {
+		return nil, errNilCurve
+	}
+	byteLen, err := curveByteLen(curve)
+	if err != nil {
+		return nil, err
+	}
 	reader := bytes.NewReader(data)
 	var header [4]byte
 	if _, err := reader.Read(header[:]); err != nil {
 		return nil, err
 	}
 	count := int(byteOrder.Uint32(header[:]))
-	curve := CurveP256
-	if curve == nil {
-		return nil, errNilCurve
-	}
-	byteLen := (curve.Params().BitSize + 7) / 8
-	tmp := make([]byte, byteLen)
 	xs := make([]*big.Int, count)
 	for i := 0; i < count; i++ {
-		if _, err := io.ReadFull(reader, tmp); err != nil {
+		x, err := readFixedBigInt(reader, byteLen)
+		if err != nil {
 			return nil, err
 		}
-		xs[i] = new(big.Int).SetBytes(tmp)
+		xs[i] = x
 	}
 	signs, err := readChunk(reader)
 	if err != nil {
@@ -491,27 +516,40 @@ func decodeCiphertexts(data []byte) ([]ot.LabelCiphertext, error) {
 }
 
 // encodeOTSetup serializes the OT sender setup.
-func encodeOTSetup(otSetup OTSenderSetup) []byte {
+func encodeOTSetup(curve elliptic.Curve, otSetup OTSenderSetup) []byte {
 	var buf bytes.Buffer
+	name := curve.Params().Name
+	if otSetup.CurveName == "" {
+		otSetup.CurveName = name
+	}
 	writeChunk(&buf, []byte(otSetup.CurveName))
-	writeBigInt(&buf, otSetup.A.X)
-	writeBigInt(&buf, otSetup.A.Y)
+	byteLen := mustCurveByteLen(curve)
+	writeFixedBigInt(&buf, byteLen, otSetup.A.X)
+	writeFixedBigInt(&buf, byteLen, otSetup.A.Y)
 
 	return buf.Bytes()
 }
 
 // decodeOTSetup rebuilds the OT sender setup.
-func decodeOTSetup(data []byte) (OTSenderSetup, error) {
+func decodeOTSetup(curve elliptic.Curve, data []byte) (OTSenderSetup, error) {
+	if curve == nil {
+		return OTSenderSetup{}, errNilCurve
+	}
 	reader := bytes.NewReader(data)
 	name, err := readChunk(reader)
 	if err != nil {
 		return OTSenderSetup{}, err
 	}
-	x, err := readBigInt(reader)
+	if string(name) != curve.Params().Name {
+		return OTSenderSetup{}, fmt.Errorf("sha2pc: OT setup curve mismatch %s vs %s",
+			string(name), curve.Params().Name)
+	}
+	byteLen := mustCurveByteLen(curve)
+	x, err := readFixedBigInt(reader, byteLen)
 	if err != nil {
 		return OTSenderSetup{}, err
 	}
-	y, err := readBigInt(reader)
+	y, err := readFixedBigInt(reader, byteLen)
 	if err != nil {
 		return OTSenderSetup{}, err
 	}
@@ -570,49 +608,98 @@ func readBigInt(r *bytes.Reader) (*big.Int, error) {
 	return new(big.Int).SetBytes(data), nil
 }
 
+func writeFixedBigInt(buf *bytes.Buffer, byteLen int, v *big.Int) {
+	tmp := make([]byte, byteLen)
+	if v != nil {
+		value := v.Bytes()
+		copy(tmp[byteLen-len(value):], value)
+	}
+	buf.Write(tmp)
+}
+
+// readFixedBigInt reads a fixed-width big integer without length prefix.
+func readFixedBigInt(r *bytes.Reader, byteLen int) (*big.Int, error) {
+	tmp := make([]byte, byteLen)
+	if _, err := io.ReadFull(r, tmp); err != nil {
+		return nil, err
+	}
+
+	return new(big.Int).SetBytes(tmp), nil
+}
+
+func curveByteLen(curve elliptic.Curve) (int, error) {
+	if curve == nil {
+		return 0, errNilCurve
+	}
+
+	return (curve.Params().BitSize + 7) / 8, nil
+}
+
+func mustCurveByteLen(curve elliptic.Curve) int {
+	l, err := curveByteLen(curve)
+	if err != nil {
+		panic(err)
+	}
+	return l
+}
+
 // encodeCOSenderSetup serializes the CO sender setup.
-func encodeCOSenderSetup(setup ot.COSenderSetup) []byte {
+func encodeCOSenderSetup(curve elliptic.Curve, setup ot.COSenderSetup) []byte {
 	var buf bytes.Buffer
+	name := curve.Params().Name
+	if setup.CurveName == "" {
+		setup.CurveName = name
+	}
 	writeChunk(&buf, []byte(setup.CurveName))
-	writeBigInt(&buf, setup.Scalar)
-	writeBigInt(&buf, setup.Ax)
-	writeBigInt(&buf, setup.Ay)
-	writeBigInt(&buf, setup.AaInvX)
-	writeBigInt(&buf, setup.AaInvY)
+	byteLen := mustCurveByteLen(curve)
+	writeFixedBigInt(&buf, byteLen, setup.Scalar)
+	writeFixedBigInt(&buf, byteLen, setup.Ax)
+	writeFixedBigInt(&buf, byteLen, setup.Ay)
+	writeFixedBigInt(&buf, byteLen, setup.AaInvX)
+	writeFixedBigInt(&buf, byteLen, setup.AaInvY)
 
 	return buf.Bytes()
 }
 
 // decodeCOSenderSetup rebuilds a CO sender setup from bytes.
-func decodeCOSenderSetup(data []byte) (ot.COSenderSetup, error) {
+func decodeCOSenderSetup(curve elliptic.Curve, data []byte) (ot.COSenderSetup, error) {
+	if curve == nil {
+		return ot.COSenderSetup{}, errNilCurve
+	}
 	reader := bytes.NewReader(data)
 
 	name, err := readChunk(reader)
 	if err != nil {
 		return ot.COSenderSetup{}, err
 	}
+	if string(name) != curve.Params().Name {
+		return ot.COSenderSetup{}, fmt.Errorf("sha2pc: CO sender curve mismatch %s vs %s",
+			string(name), curve.Params().Name)
+	}
 
-	scalar, err := readBigInt(reader)
+	byteLen := mustCurveByteLen(curve)
+
+	scalar, err := readFixedBigInt(reader, byteLen)
 	if err != nil {
 		return ot.COSenderSetup{}, err
 	}
 
-	ax, err := readBigInt(reader)
+	ax, err := readFixedBigInt(reader, byteLen)
 	if err != nil {
 		return ot.COSenderSetup{}, err
 	}
 
-	ay, err := readBigInt(reader)
+	ay, err := readFixedBigInt(reader, byteLen)
 	if err != nil {
 		return ot.COSenderSetup{}, err
 	}
 
-	ainvx, err := readBigInt(reader)
+	ainvx, err := readFixedBigInt(reader, byteLen)
 	if err != nil {
 		return ot.COSenderSetup{}, err
 	}
 
-	ainvy, err := readBigInt(reader)
+	ainvy, err := readFixedBigInt(reader, byteLen)
 	if err != nil {
 		return ot.COSenderSetup{}, err
 	}
@@ -628,30 +715,21 @@ func decodeCOSenderSetup(data []byte) (ot.COSenderSetup, error) {
 }
 
 // encodeChoiceBundle serializes a CO choice bundle.
-func encodeChoiceBundle(bundle ot.COChoiceBundle) []byte {
+func encodeChoiceBundle(curve elliptic.Curve, bundle ot.COChoiceBundle) []byte {
 	var buf bytes.Buffer
+	if bundle.CurveName == "" {
+		bundle.CurveName = curve.Params().Name
+	}
 	writeChunk(&buf, []byte(bundle.CurveName))
-	writeBigInt(&buf, bundle.Ax)
-	writeBigInt(&buf, bundle.Ay)
+	byteLen := mustCurveByteLen(curve)
+	writeFixedBigInt(&buf, byteLen, bundle.Ax)
+	writeFixedBigInt(&buf, byteLen, bundle.Ay)
 
 	var header [4]byte
 	byteOrder.PutUint32(header[:], uint32(len(bundle.Scalars)))
 	buf.Write(header[:])
-	if len(bundle.Scalars) > 0 {
-		curve := CurveP256
-		if curve == nil {
-			panic("sha2pc: CurveP256 is nil")
-		}
-		byteLen := (curve.Params().BitSize + 7) / 8
-		tmp := make([]byte, byteLen)
-		for _, scalar := range bundle.Scalars {
-			for i := range tmp {
-				tmp[i] = 0
-			}
-			sBytes := scalar.Bytes()
-			copy(tmp[byteLen-len(sBytes):], sBytes)
-			buf.Write(tmp)
-		}
+	for _, scalar := range bundle.Scalars {
+		writeFixedBigInt(&buf, byteLen, scalar)
 	}
 
 	byteOrder.PutUint32(header[:], uint32(len(bundle.Bits)))
@@ -662,20 +740,28 @@ func encodeChoiceBundle(bundle ot.COChoiceBundle) []byte {
 }
 
 // decodeChoiceBundle restores a CO choice bundle from bytes.
-func decodeChoiceBundle(data []byte) (ot.COChoiceBundle, error) {
+func decodeChoiceBundle(curve elliptic.Curve, data []byte) (ot.COChoiceBundle, error) {
+	if curve == nil {
+		return ot.COChoiceBundle{}, errNilCurve
+	}
 	reader := bytes.NewReader(data)
 
 	name, err := readChunk(reader)
 	if err != nil {
 		return ot.COChoiceBundle{}, err
 	}
+	if string(name) != curve.Params().Name {
+		return ot.COChoiceBundle{}, fmt.Errorf("sha2pc: CO choice curve mismatch %s vs %s",
+			string(name), curve.Params().Name)
+	}
+	byteLen := mustCurveByteLen(curve)
 
-	ax, err := readBigInt(reader)
+	ax, err := readFixedBigInt(reader, byteLen)
 	if err != nil {
 		return ot.COChoiceBundle{}, err
 	}
 
-	ay, err := readBigInt(reader)
+	ay, err := readFixedBigInt(reader, byteLen)
 	if err != nil {
 		return ot.COChoiceBundle{}, err
 	}
@@ -687,19 +773,12 @@ func decodeChoiceBundle(data []byte) (ot.COChoiceBundle, error) {
 
 	scalarCount := int(byteOrder.Uint32(header[:]))
 	scalars := make([]*big.Int, scalarCount)
-	if scalarCount > 0 {
-		curve := CurveP256
-		if curve == nil {
-			return ot.COChoiceBundle{}, errNilCurve
+	for i := 0; i < scalarCount; i++ {
+		value, err := readFixedBigInt(reader, byteLen)
+		if err != nil {
+			return ot.COChoiceBundle{}, err
 		}
-		byteLen := (curve.Params().BitSize + 7) / 8
-		tmp := make([]byte, byteLen)
-		for i := 0; i < scalarCount; i++ {
-			if _, err := io.ReadFull(reader, tmp); err != nil {
-				return ot.COChoiceBundle{}, err
-			}
-			scalars[i] = new(big.Int).SetBytes(tmp)
-		}
+		scalars[i] = value
 	}
 	if _, err := reader.Read(header[:]); err != nil {
 		return ot.COChoiceBundle{}, err
@@ -707,8 +786,8 @@ func decodeChoiceBundle(data []byte) (ot.COChoiceBundle, error) {
 
 	bitsCount := int(byteOrder.Uint32(header[:]))
 	bits := make([]bool, bitsCount)
-	byteLen := (bitsCount + 7) / 8
-	raw := make([]byte, byteLen)
+	bitsByteLen := (bitsCount + 7) / 8
+	raw := make([]byte, bitsByteLen)
 	if _, err := reader.Read(raw); err != nil {
 		return ot.COChoiceBundle{}, err
 	}

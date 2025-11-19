@@ -48,7 +48,10 @@ func EvaluatorRound2(rng io.Reader, curve elliptic.Curve, msg Round1Payload, pre
 	}
 	state.choiceBundle = bundle
 
-	return Round2Payload{Choices: choices}, state, nil
+	return Round2Payload{
+		CurveName: curve.Params().Name,
+		Choices:   choices,
+	}, state, nil
 }
 
 // EvaluatorRound4 processes Round3 payload, returns the hash and Round4 payload.

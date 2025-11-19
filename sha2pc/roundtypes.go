@@ -19,6 +19,9 @@ type OTSenderSetup struct {
 
 // Round2Payload carries the evaluator's OT choices back to the garbler.
 type Round2Payload struct {
+	// CurveName identifies the elliptic curve used for OT.
+	CurveName string
+
 	// Choices stores one curve point per input bit.
 	Choices []ot.ECPoint
 }
