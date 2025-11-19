@@ -118,9 +118,9 @@ func TestDeterministicTranscript(t *testing.T) {
 	finalHash := hex.EncodeToString(final[:])
 
 	const (
-		expRound1 = "2239d62e96a5cb32fa69b15b28979c4f28a19dc7ec9c8397e257e016575a4a3b"
-		expRound2 = "dc9af55c3c63b5b389e30147fd8e50444a0a4f36bdbc1e21c43fa77852d5c771"
-		expRound3 = "3c7aaa2897f21d919d8935427e057038dc965396e6edec87afba102e954ca89c"
+		expRound1 = "757172ded20738591e9a4139faa34396d06243f6ebe337eb0225b22ec161f99c"
+		expRound2 = "5d5f57649f62b8d8c192d1dfff79c169c64066157f905bffcca78ca16d964537"
+		expRound3 = "93798d90c3eecaebd1915236b7c7b812736116f7242e4a7c80d55773182cc513"
 		expFinal  = "4b2f74579fc7c778745121996f604371a326dc5174f9851706032626668abf2e"
 	)
 
@@ -234,11 +234,11 @@ func TestPayloadSizesByCurve(t *testing.T) {
 				garblerRound3: []byte("sizes-p256-g3"),
 			},
 			expect: expectations{
-				round1Len:    75,
-				round2Len:    8243,
-				round3Len:    1218390,
-				garblerLen:   175,
-				evaluatorLen: 8311,
+				round1Len:    72,
+				round2Len:    8237,
+				round3Len:    1218383,
+				garblerLen:   170,
+				evaluatorLen: 8306,
 				finalHash:    "4b2f74579fc7c778745121996f604371a326dc5174f9851706032626668abf2e",
 			},
 		},
@@ -255,11 +255,11 @@ func TestPayloadSizesByCurve(t *testing.T) {
 				garblerRound3: []byte("sizes-p224-g3"),
 			},
 			expect: expectations{
-				round1Len:    67,
-				round2Len:    7219,
-				round3Len:    1218390,
-				garblerLen:   155,
-				evaluatorLen: 7279,
+				round1Len:    64,
+				round2Len:    7213,
+				round3Len:    1218383,
+				garblerLen:   150,
+				evaluatorLen: 7274,
 				finalHash:    "4b2f74579fc7c778745121996f604371a326dc5174f9851706032626668abf2e",
 			},
 		},
@@ -411,11 +411,11 @@ func TestSessionIdempotency(t *testing.T) {
 	finalHash := hex.EncodeToString(finalA[:])
 
 	const (
-		idemRound1Hash           = "83629868746054265599b2296ad279ac7fc4f9113fae3c10c02007de3f2db8a3"
-		idemRound2Hash           = "9cb484f45b41f2012686350068a526319604b233132023e2666107885b3ac84c"
-		idemRound3Hash           = "bef0bf40cbdb420b0460d71e22cbbcae799546ea50882b3ffefd502e021fe534"
-		idemGarblerSessionHash   = "6c3f20bf31092991bf70b1bc0f5f21e0f68574e2c164c7f4e7a3aa3f2d9d5cf7"
-		idemEvaluatorSessionHash = "638159689ad1d97300dd971fe7899c3fd32faa11acc86eebddd12bae2cf3bc0b"
+		idemRound1Hash           = "ccc4ecf919fff10e9f42a993278ec1e38013e67c972b350798e5bd146ba31924"
+		idemRound2Hash           = "e4cb5b04909342a445eba0868802df95ebf701ff24fb3760bb5159afd99c6f0d"
+		idemRound3Hash           = "509fa913773979d02d43957d3d327d3e796dc0945da64c0adeed9f54da5b0102"
+		idemGarblerSessionHash   = "942ed31314f6cecbc11f0a3fda80777124b0b6c94d25f18af1c87dbc7d0b0a8a"
+		idemEvaluatorSessionHash = "22c18b030b02ab6cf7f7eb8f6932d3f499ab5b1044c8272c2e024ed701f712a3"
 		idemFinalHash            = "4b2f74579fc7c778745121996f604371a326dc5174f9851706032626668abf2e"
 	)
 

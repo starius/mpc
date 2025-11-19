@@ -587,19 +587,21 @@ func decodeOTSetup(curve elliptic.Curve, reader *bytes.Reader) (OTSenderSetup, e
 
 // writeChunk writes a length-prefixed byte slice.
 func writeChunk(buf *bytes.Buffer, data []byte) {
-	var header [4]byte
-	byteOrder.PutUint32(header[:], uint32(len(data)))
-	buf.Write(header[:])
+	var scratch [binary.MaxVarintLen64]byte
+	n := binary.PutUvarint(scratch[:], uint64(len(data)))
+	buf.Write(scratch[:n])
 	buf.Write(data)
 }
 
 // readChunk reads a single length-prefixed byte slice.
 func readChunk(r *bytes.Reader) ([]byte, error) {
-	var header [4]byte
-	if _, err := r.Read(header[:]); err != nil {
+	length, err := binary.ReadUvarint(r)
+	if err != nil {
 		return nil, err
 	}
-	length := int(byteOrder.Uint32(header[:]))
+	if int64(length) > int64(r.Len()) {
+		return nil, fmt.Errorf("chunk length %d exceeds remaining %d", length, r.Len())
+	}
 	data := make([]byte, length)
 	if _, err := r.Read(data); err != nil {
 		return nil, err
