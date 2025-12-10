@@ -1,0 +1,78 @@
+// -*- go -*-
+
+package main
+
+import (
+	"crypto/sha256"
+)
+
+const (
+	wotsN    = 32
+	wotsW    = 16
+
+	addrTypeWOTS    = 0
+	addrTypeWOTSPRF = 5
+
+	addrOffsetType = 9
+	addrOffsetHash = 21
+)
+
+type Address [32]byte
+
+func setType(addr *Address, t byte) {
+	addr[addrOffsetType] = t
+}
+
+func setHash(addr *Address, h byte) {
+	addr[addrOffsetHash] = h
+}
+
+func prfAddr(pubSeed [wotsN]byte, skSeed [wotsN]byte, addr Address) [wotsN]byte {
+	var buf [wotsN + 32 + wotsN]byte
+	for i := 0; i < wotsN; i++ {
+		buf[i] = pubSeed[i]
+	}
+	for i := 0; i < 32; i++ {
+		buf[wotsN+i] = addr[i]
+	}
+	for i := 0; i < wotsN; i++ {
+		buf[wotsN+32+i] = skSeed[i]
+	}
+	return sha256.Sum256(buf[:])
+}
+
+func thash(pubSeed [wotsN]byte, addr Address, in [wotsN]byte) [wotsN]byte {
+	var buf [wotsN + 32 + wotsN]byte
+	for i := 0; i < wotsN; i++ {
+		buf[i] = pubSeed[i]
+	}
+	for i := 0; i < 32; i++ {
+		buf[wotsN+i] = addr[i]
+	}
+	for i := 0; i < wotsN; i++ {
+		buf[wotsN+32+i] = in[i]
+	}
+	return sha256.Sum256(buf[:])
+}
+
+// main computes one WOTS+ chain endpoint: PRF start then 15 THash steps.
+// Inputs:
+//  skSeedG, skSeedE : secret shares of sk_seed (XORed inside the circuit)
+//  pubSeed, addr    : public
+func main(skSeedG, skSeedE [wotsN]byte, pubSeed [wotsN]byte, addr Address) [wotsN]byte {
+	var skSeed [wotsN]byte
+	for i := 0; i < wotsN; i++ {
+		skSeed[i] = skSeedG[i] ^ skSeedE[i]
+	}
+
+	setHash(&addr, 0)
+	setType(&addr, addrTypeWOTSPRF)
+	x := prfAddr(pubSeed, skSeed, addr)
+
+	setType(&addr, addrTypeWOTS)
+	for step := 0; step < wotsW-1; step++ {
+		setHash(&addr, byte(step))
+		x = thash(pubSeed, addr, x)
+	}
+	return x
+}
