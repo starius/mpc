@@ -19,6 +19,12 @@ const (
 
 type Address [32]byte
 
+type GarblerInput struct {
+	SkSeed  [wotsN]byte
+	PubSeed [wotsN]byte
+	Addr    Address
+}
+
 func setType(addr *Address, t byte) {
 	addr[addrOffsetType] = t
 }
@@ -57,22 +63,23 @@ func thash(pubSeed [wotsN]byte, addr Address, in [wotsN]byte) [wotsN]byte {
 
 // main computes one WOTS+ chain endpoint: PRF start then 15 THash steps.
 // Inputs:
-//  skSeedG, skSeedE : secret shares of sk_seed (XORed inside the circuit)
-//  pubSeed, addr    : public
-func main(skSeedG, skSeedE [wotsN]byte, pubSeed [wotsN]byte, addr Address) [wotsN]byte {
+//  garbler: skSeedG, pubSeed, addr; evaluator: skSeedE. pubSeed/addr are public
+//  but modeled as garbler inputs so we stay 2-party.
+func main(g GarblerInput, skSeedE [wotsN]byte) [wotsN]byte {
 	var skSeed [wotsN]byte
 	for i := 0; i < wotsN; i++ {
-		skSeed[i] = skSeedG[i] ^ skSeedE[i]
+		skSeed[i] = g.SkSeed[i] ^ skSeedE[i]
 	}
 
+	addr := g.Addr
 	setHash(&addr, 0)
 	setType(&addr, addrTypeWOTSPRF)
-	x := prfAddr(pubSeed, skSeed, addr)
+	x := prfAddr(g.PubSeed, skSeed, addr)
 
 	setType(&addr, addrTypeWOTS)
 	for step := 0; step < wotsW-1; step++ {
 		setHash(&addr, byte(step))
-		x = thash(pubSeed, addr, x)
+		x = thash(g.PubSeed, addr, x)
 	}
 	return x
 }
