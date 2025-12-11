@@ -11,12 +11,12 @@ func Example_publicKey2PC() {
 	var skG [32]byte
 	var skE [32]byte
 	var pubSeed [32]byte
-	crand.Read(skSeed[:])
-	crand.Read(skE[:])
 	for i := 0; i < 32; i++ {
-		skG[i] = skSeed[i] ^ skE[i]
+		skG[i] = byte(i + 1)
+		skE[i] = byte(255 - i)
+		skSeed[i] = skG[i] ^ skE[i]
+		pubSeed[i] = byte(0xa0 + i)
 	}
-	crand.Read(pubSeed[:])
 	var addr Address
 
 	// Reference PK.

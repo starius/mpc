@@ -13,9 +13,12 @@ address are public and supplied by the garbler as public inputs.
 
 ```go
 var skSeed, skG, skE, pubSeed [32]byte
-// populate seeds...
-for i := 0; i < 32; i++ { skG[i] = skSeed[i] ^ skE[i] }
-
+for i := 0; i < 32; i++ {
+    skG[i] = byte(i + 1)
+    skE[i] = byte(255 - i)
+    skSeed[i] = skG[i] ^ skE[i]
+    pubSeed[i] = byte(0xa0 + i)
+}
 var addr wots2pc.Address // fill layer/tree/keypair/chain as needed
 
 // Pure Go reference
