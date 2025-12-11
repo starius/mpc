@@ -20,6 +20,9 @@ for i := 0; i < 32; i++ {
     pubSeed[i] = byte(0xa0 + i)
 }
 var addr wots2pc.Address // fill layer/tree/keypair/chain as needed
+addr.SetLayer(2)
+addr.SetTree(0x1122334455667788)
+addr.SetKeypair(0x01020304)
 
 // Pure Go reference
 ctx, _ := wots2pc.NewContext(skSeed[:], pubSeed[:])
@@ -30,13 +33,7 @@ msg1, gState, _ := wots2pc.GarblerRound1(crand.Reader, wots2pc.CurveP256)
 msg2, eState, _ := wots2pc.EvaluatorRound2(crand.Reader, wots2pc.CurveP256, msg1, skE)
 msg3, _ := wots2pc.GarblerRound3(crand.Reader, wots2pc.CurveP256, gState, skG, msg2)
 
-pk := make([]byte, len(refPK))
-for i := 0; i < wots2pc.SHA2_256sParams.Len; i++ {
-    a := addr
-    a.SetChain(byte(i))
-    elem, _ := wots2pc.EvaluatorRound4(wots2pc.CurveP256, eState, msg3, pubSeed, a)
-    copy(pk[i*32:(i+1)*32], elem[:])
-}
+pk, _ := wots2pc.EvaluatorRound4(wots2pc.CurveP256, eState, msg3, pubSeed, addr)
 // pk matches refPK
 ```
 

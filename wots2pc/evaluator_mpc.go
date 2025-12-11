@@ -43,72 +43,73 @@ func EvaluatorRound2(rng io.Reader, curve elliptic.Curve, msg Round1Payload, skS
 	}, state, nil
 }
 
-// EvaluatorRound4 evaluates the chain circuit for a given public seed/address.
-// The same Round3 payload can be reused for multiple addresses by calling this
-// function repeatedly.
-func EvaluatorRound4(curve elliptic.Curve, state *EvaluatorSession, msg Round3Payload, pubSeed [32]byte, addr Address) ([32]byte, error) {
-	var out [32]byte
+// EvaluatorRound4 evaluates all chains and returns the WOTS+ public key.
+func EvaluatorRound4(curve elliptic.Curve, state *EvaluatorSession, msg Round3Payload, pubSeed [32]byte, baseAddr Address) ([]byte, error) {
 	if state == nil || len(state.ChoiceBundle.Scalars) == 0 {
-		return out, fmt.Errorf("invalid evaluator state for round 4")
+		return nil, fmt.Errorf("invalid evaluator state for round 4")
 	}
 	if curve == nil {
-		return out, errNilCurve
+		return nil, errNilCurve
 	}
 	if msg.SessionID != state.SessionID {
-		return out, fmt.Errorf("session id mismatch: got %d want %d", msg.SessionID, state.SessionID)
+		return nil, fmt.Errorf("session id mismatch: got %d want %d", msg.SessionID, state.SessionID)
 	}
 
 	evalLabels, err := ot.DecryptCOCiphertexts(curve, state.ChoiceBundle, msg.Ciphertexts)
 	if err != nil {
-		return out, err
+		return nil, err
 	}
 	if len(msg.GarblerInputs) != garblerSecretBits {
-		return out, fmt.Errorf("garbler input label mismatch: got %d want %d", len(msg.GarblerInputs), garblerSecretBits)
+		return nil, fmt.Errorf("garbler input label mismatch: got %d want %d", len(msg.GarblerInputs), garblerSecretBits)
 	}
 	if len(msg.PublicInputs) != publicBitCount {
-		return out, fmt.Errorf("public label mismatch: got %d want %d", len(msg.PublicInputs), publicBitCount)
+		return nil, fmt.Errorf("public label mismatch: got %d want %d", len(msg.PublicInputs), publicBitCount)
 	}
 
-	// Assemble input wires: skG labels, pub labels chosen per bit, evaluator labels.
-	wires := make([]ot.Label, totalWires)
-	copy(wires[:garblerSecretBits], msg.GarblerInputs)
-
-	pubBits := make([]bool, publicBitCount)
 	pubSeedBits := bytesToBitsLittle(pubSeed[:])
-	addrBits := bytesToBitsLittle(addr[:])
-	copy(pubBits[:256], pubSeedBits)
-	copy(pubBits[256:], addrBits)
-	for i := 0; i < publicBitCount; i++ {
-		w := msg.PublicInputs[i]
-		if pubBits[i] {
-			wires[garblerSecretBits+i] = w.L1
-		} else {
-			wires[garblerSecretBits+i] = w.L0
+	pk := make([]byte, SHA2_256sParams.Len*SHA2_256sParams.N)
+
+	for chainIdx := 0; chainIdx < SHA2_256sParams.Len; chainIdx++ {
+		addr := baseAddr
+		addr.SetChain(byte(chainIdx))
+
+		// Assemble input wires: skG labels, pub labels chosen per bit, evaluator labels.
+		wires := make([]ot.Label, totalWires)
+		copy(wires[:garblerSecretBits], msg.GarblerInputs)
+
+		pubBits := make([]bool, publicBitCount)
+		addrBits := bytesToBitsLittle(addr[:])
+		copy(pubBits[:256], pubSeedBits)
+		copy(pubBits[256:], addrBits)
+		for i := 0; i < publicBitCount; i++ {
+			w := msg.PublicInputs[i]
+			if pubBits[i] {
+				wires[garblerSecretBits+i] = w.L1
+			} else {
+				wires[garblerSecretBits+i] = w.L0
+			}
 		}
-	}
 
-	copy(wires[garblerInputBitCount:], evalLabels)
+		copy(wires[garblerInputBitCount:], evalLabels)
 
-	if err := wotsChainCircuit.Eval(msg.Key[:], wires, msg.GarbledTables); err != nil {
-		return out, err
-	}
-
-	if len(msg.OutputHints) != outputHintCount {
-		return out, fmt.Errorf("output hint mismatch: have %d want %d", len(msg.OutputHints), outputHintCount)
-	}
-	start := wotsChainCircuit.NumWires - len(msg.OutputHints)
-	outputBits := make([]bool, len(msg.OutputHints))
-	for i := 0; i < len(msg.OutputHints); i++ {
-		bit, err := circuit.BitFromLabel(msg.OutputHints[i], wires[int(start)+i])
-		if err != nil {
-			return out, err
+		if err := wotsChainCircuit.Eval(msg.Key[:], wires, msg.GarbledTables); err != nil {
+			return nil, err
 		}
-		outputBits[i] = bit
+
+		if len(msg.OutputHints) != outputHintCount {
+			return nil, fmt.Errorf("output hint mismatch: have %d want %d", len(msg.OutputHints), outputHintCount)
+		}
+		start := wotsChainCircuit.NumWires - len(msg.OutputHints)
+		outputBits := make([]bool, len(msg.OutputHints))
+		for i := 0; i < len(msg.OutputHints); i++ {
+			bit, err := circuit.BitFromLabel(msg.OutputHints[i], wires[int(start)+i])
+			if err != nil {
+				return nil, err
+			}
+			outputBits[i] = bit
+		}
+		bytes := bitsToBytesLittle(outputBits)
+		copy(pk[chainIdx*SHA2_256sParams.N:(chainIdx+1)*SHA2_256sParams.N], bytes)
 	}
-	bytes := bitsToBytesLittle(outputBits)
-	if len(bytes) != len(out) {
-		return out, fmt.Errorf("unexpected output length %d", len(bytes))
-	}
-	copy(out[:], bytes)
-	return out, nil
+	return pk, nil
 }

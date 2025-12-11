@@ -18,6 +18,9 @@ func Example_publicKey2PC() {
 		pubSeed[i] = byte(0xa0 + i)
 	}
 	var addr Address
+	addr.SetLayer(2)
+	addr.SetTree(0x1122334455667788)
+	addr.SetKeypair(0x01020304)
 
 	// Reference PK.
 	ctx, err := NewContext(skSeed[:], pubSeed[:])
@@ -44,16 +47,10 @@ func Example_publicKey2PC() {
 		return
 	}
 
-	pk := make([]byte, len(refPK))
-	for i := 0; i < SHA2_256sParams.Len; i++ {
-		a := addr
-		a.SetChain(byte(i))
-		elem, err := EvaluatorRound4(CurveP256, eState, msg3, pubSeed, a)
-		if err != nil {
-			fmt.Printf("error: %v\n", err)
-			return
-		}
-		copy(pk[i*32:(i+1)*32], elem[:])
+	pk, err := EvaluatorRound4(CurveP256, eState, msg3, pubSeed, addr)
+	if err != nil {
+		fmt.Printf("error: %v\n", err)
+		return
 	}
 
 	fmt.Printf("match: %v\n", string(pk) == string(refPK))

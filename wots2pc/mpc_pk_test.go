@@ -26,6 +26,9 @@ func TestMPCPublicKey(t *testing.T) {
 		t.Fatalf("rand: %v", err)
 	}
 	var baseAddr Address
+	baseAddr.SetLayer(1)
+	baseAddr.SetTree(0x0102030405060708)
+	baseAddr.SetKeypair(0x0a0b0c0d)
 
 	// Reference PK.
 	ctx, err := NewContext(skSeed[:], pubSeed[:])
@@ -48,15 +51,9 @@ func TestMPCPublicKey(t *testing.T) {
 		t.Fatalf("GarblerRound3: %v", err)
 	}
 
-	gotPK := make([]byte, len(refPK))
-	for i := 0; i < SHA2_256sParams.Len; i++ {
-		addr := baseAddr
-		addr.SetChain(byte(i))
-		elem, err := EvaluatorRound4(CurveP256, eSess, msg3, pubSeed, addr)
-		if err != nil {
-			t.Fatalf("EvaluatorRound4 chain %d: %v", i, err)
-		}
-		copy(gotPK[i*32:(i+1)*32], elem[:])
+	gotPK, err := EvaluatorRound4(CurveP256, eSess, msg3, pubSeed, baseAddr)
+	if err != nil {
+		t.Fatalf("EvaluatorRound4: %v", err)
 	}
 
 	if !bytes.Equal(refPK, gotPK) {
