@@ -23,17 +23,19 @@ var addr wots2pc.Address // fill layer/tree/keypair/chain as needed
 addr.SetLayer(2)
 addr.SetTree(0x1122334455667788)
 addr.SetKeypair(0x01020304)
+public := wots2pc.PublicData{PubSeed: pubSeed, Addr: addr}
+circ, meta, _ := wots2pc.CompileCircuit(public)
 
 // Pure Go reference
 ctx, _ := wots2pc.NewContext(skSeed[:], pubSeed[:])
 refPK := wots2pc.PublicKey(ctx, addr)
 
 // 2PC flow (public-key only)
-msg1, gState, _ := wots2pc.GarblerRound1(crand.Reader, wots2pc.CurveP256)
-msg2, eState, _ := wots2pc.EvaluatorRound2(crand.Reader, wots2pc.CurveP256, msg1, skE)
-msg3, _ := wots2pc.GarblerRound3(crand.Reader, wots2pc.CurveP256, gState, skG, msg2)
+msg1, gState, _ := wots2pc.GarblerRound1(crand.Reader, wots2pc.CurveP256, public, meta)
+msg2, eState, _ := wots2pc.EvaluatorRound2(crand.Reader, wots2pc.CurveP256, msg1, public, meta, skE)
+msg3, _ := wots2pc.GarblerRound3(crand.Reader, wots2pc.CurveP256, circ, public, meta, gState, skG, msg2)
 
-pk, _ := wots2pc.EvaluatorRound4(wots2pc.CurveP256, eState, msg3, pubSeed, addr)
+pk, _ := wots2pc.EvaluatorRound4(wots2pc.CurveP256, circ, public, meta, eState, msg3)
 // pk matches refPK
 ```
 

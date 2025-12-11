@@ -29,6 +29,12 @@ func TestMPCPublicKey(t *testing.T) {
 	baseAddr.SetLayer(1)
 	baseAddr.SetTree(0x0102030405060708)
 	baseAddr.SetKeypair(0x0a0b0c0d)
+	public := PublicData{PubSeed: pubSeed, Addr: baseAddr}
+
+	circ, meta, err := CompileCircuit(public)
+	if err != nil {
+		t.Fatalf("CompileCircuit: %v", err)
+	}
 
 	// Reference PK.
 	ctx, err := NewContext(skSeed[:], pubSeed[:])
@@ -38,20 +44,20 @@ func TestMPCPublicKey(t *testing.T) {
 	refPK := PublicKey(ctx, baseAddr)
 
 	// 2PC rounds.
-	msg1, gSess, err := GarblerRound1(rand.Reader, CurveP256)
+	msg1, gSess, err := GarblerRound1(rand.Reader, CurveP256, public, meta)
 	if err != nil {
 		t.Fatalf("GarblerRound1: %v", err)
 	}
-	msg2, eSess, err := EvaluatorRound2(rand.Reader, CurveP256, msg1, skE)
+	msg2, eSess, err := EvaluatorRound2(rand.Reader, CurveP256, msg1, public, meta, skE)
 	if err != nil {
 		t.Fatalf("EvaluatorRound2: %v", err)
 	}
-	msg3, err := GarblerRound3(rand.Reader, CurveP256, gSess, skG, msg2)
+	msg3, err := GarblerRound3(rand.Reader, CurveP256, circ, public, meta, gSess, skG, msg2)
 	if err != nil {
 		t.Fatalf("GarblerRound3: %v", err)
 	}
 
-	gotPK, err := EvaluatorRound4(CurveP256, eSess, msg3, pubSeed, baseAddr)
+	gotPK, err := EvaluatorRound4(CurveP256, circ, public, meta, eSess, msg3)
 	if err != nil {
 		t.Fatalf("EvaluatorRound4: %v", err)
 	}

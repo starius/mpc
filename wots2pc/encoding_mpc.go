@@ -22,6 +22,8 @@ func EncodeRound1(curve elliptic.Curve, p Round1Payload) ([]byte, error) {
 	var sid [8]byte
 	binary.BigEndian.PutUint64(sid[:], p.SessionID)
 	buf.Write(sid[:])
+	writeChunk(&buf, encodePublic(p.Public))
+	writeChunk(&buf, encodeMeta(p.Meta))
 	if err := encodeOTSetup(&buf, curve, p.OT); err != nil {
 		return nil, err
 	}
@@ -39,7 +41,20 @@ func DecodeRound1(curve elliptic.Curve, data []byte) (Round1Payload, error) {
 	if _, err := io.ReadFull(reader, sidBuf[:]); err != nil {
 		return Round1Payload{}, err
 	}
-	var err error
+	pubChunk, err := readChunk(reader)
+	if err != nil {
+		return Round1Payload{}, err
+	}
+	metaChunk, err := readChunk(reader)
+	if err != nil {
+		return Round1Payload{}, err
+	}
+	if payload.Public, err = decodePublic(pubChunk); err != nil {
+		return Round1Payload{}, err
+	}
+	if payload.Meta, err = decodeMeta(metaChunk); err != nil {
+		return Round1Payload{}, err
+	}
 	payload.OT, err = decodeOTSetup(curve, reader)
 	if err != nil {
 		return Round1Payload{}, err
@@ -60,6 +75,8 @@ func EncodeRound2(curve elliptic.Curve, p Round2Payload) ([]byte, error) {
 	var sid [8]byte
 	binary.BigEndian.PutUint64(sid[:], p.SessionID)
 	buf.Write(sid[:])
+	writeChunk(&buf, encodePublic(p.Public))
+	writeChunk(&buf, encodeMeta(p.Meta))
 	writeChunk(&buf, []byte(curve.Params().Name))
 	if err := encodePoints(curve, &buf, p.Choices); err != nil {
 		return nil, err
@@ -75,6 +92,14 @@ func DecodeRound2(curve elliptic.Curve, data []byte) (Round2Payload, error) {
 	reader := bytes.NewReader(data)
 	var sidBuf [8]byte
 	if _, err := io.ReadFull(reader, sidBuf[:]); err != nil {
+		return Round2Payload{}, err
+	}
+	pubChunk, err := readChunk(reader)
+	if err != nil {
+		return Round2Payload{}, err
+	}
+	metaChunk, err := readChunk(reader)
+	if err != nil {
 		return Round2Payload{}, err
 	}
 	nameChunk, err := readChunk(reader)
@@ -93,10 +118,20 @@ func DecodeRound2(curve elliptic.Curve, data []byte) (Round2Payload, error) {
 	if err != nil {
 		return Round2Payload{}, err
 	}
+	public, err := decodePublic(pubChunk)
+	if err != nil {
+		return Round2Payload{}, err
+	}
+	meta, err := decodeMeta(metaChunk)
+	if err != nil {
+		return Round2Payload{}, err
+	}
 	return Round2Payload{
 		SessionID: binary.BigEndian.Uint64(sidBuf[:]),
 		CurveName: curveName,
 		Choices:   points,
+		Public:    public,
+		Meta:      meta,
 	}, nil
 }
 
@@ -107,6 +142,8 @@ func EncodeRound3(p Round3Payload) ([]byte, error) {
 	binary.BigEndian.PutUint64(sid[:], p.SessionID)
 	buf.Write(sid[:])
 	buf.Write(p.Key[:])
+	writeChunk(&buf, encodePublic(p.Public))
+	writeChunk(&buf, encodeMeta(p.Meta))
 	if err := encodeGarbledTables(&buf, p.GarbledTables); err != nil {
 		return nil, err
 	}
@@ -137,6 +174,14 @@ func DecodeRound3(data []byte) (Round3Payload, error) {
 	if _, err := io.ReadFull(reader, payload.Key[:]); err != nil {
 		return Round3Payload{}, err
 	}
+	pubChunk, err := readChunk(reader)
+	if err != nil {
+		return Round3Payload{}, err
+	}
+	metaChunk, err := readChunk(reader)
+	if err != nil {
+		return Round3Payload{}, err
+	}
 	tables, err := readChunk(reader)
 	if err != nil {
 		return Round3Payload{}, err
@@ -153,11 +198,11 @@ func DecodeRound3(data []byte) (Round3Payload, error) {
 	if err != nil {
 		return Round3Payload{}, err
 	}
-	pubChunk, err := readChunk(reader)
+	pubInputs, err := readChunk(reader)
 	if err != nil {
 		return Round3Payload{}, err
 	}
-	payload.PublicInputs, err = decodeOutputHints(pubChunk)
+	payload.PublicInputs, err = decodeOutputHints(pubInputs)
 	if err != nil {
 		return Round3Payload{}, err
 	}
@@ -175,6 +220,12 @@ func DecodeRound3(data []byte) (Round3Payload, error) {
 	}
 	payload.Ciphertexts, err = decodeCiphertexts(ctChunk)
 	if err != nil {
+		return Round3Payload{}, err
+	}
+	if payload.Public, err = decodePublic(pubChunk); err != nil {
+		return Round3Payload{}, err
+	}
+	if payload.Meta, err = decodeMeta(metaChunk); err != nil {
 		return Round3Payload{}, err
 	}
 	return payload, nil
@@ -349,6 +400,45 @@ func readChunk(r io.Reader) ([]byte, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+func encodePublic(p PublicData) []byte {
+	var buf bytes.Buffer
+	buf.Write(p.PubSeed[:])
+	buf.Write(p.Addr[:])
+	return buf.Bytes()
+}
+
+func decodePublic(data []byte) (PublicData, error) {
+	if len(data) != 64 {
+		return PublicData{}, fmt.Errorf("public data length %d", len(data))
+	}
+	var p PublicData
+	copy(p.PubSeed[:], data[:32])
+	copy(p.Addr[:], data[32:])
+	return p, nil
+}
+
+func encodeMeta(m CircuitMeta) []byte {
+	var buf bytes.Buffer
+	var tmp [4]byte
+	binary.BigEndian.PutUint32(tmp[:], uint32(m.Gates))
+	buf.Write(tmp[:])
+	binary.BigEndian.PutUint32(tmp[:], uint32(m.Wires))
+	buf.Write(tmp[:])
+	buf.Write(m.Hash[:])
+	return buf.Bytes()
+}
+
+func decodeMeta(data []byte) (CircuitMeta, error) {
+	if len(data) != 4+4+32 {
+		return CircuitMeta{}, fmt.Errorf("meta length %d", len(data))
+	}
+	var m CircuitMeta
+	m.Gates = int(binary.BigEndian.Uint32(data[0:4]))
+	m.Wires = int(binary.BigEndian.Uint32(data[4:8]))
+	copy(m.Hash[:], data[8:])
+	return m, nil
 }
 
 // encodePoints serializes EC points into buf using fixed-width X coordinates

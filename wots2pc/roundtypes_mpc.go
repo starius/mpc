@@ -6,6 +6,8 @@ import "github.com/markkurossi/mpc/ot"
 type Round1Payload struct {
 	SessionID uint64
 	OT        OTSenderSetup
+	Public    PublicData
+	Meta      CircuitMeta
 }
 
 // OTSenderSetup exposes the sender metadata needed for OT.
@@ -19,6 +21,8 @@ type Round2Payload struct {
 	SessionID uint64
 	CurveName string
 	Choices   []ot.ECPoint
+	Public    PublicData
+	Meta      CircuitMeta
 }
 
 // Round3Payload bundles the garbled circuit and labels.
@@ -28,8 +32,10 @@ type Round3Payload struct {
 	Key           [32]byte
 	GarbledTables [][]ot.Label
 	GarblerInputs []ot.Label // for skSeedG bits
-	PublicInputs  []ot.Wire  // both labels for pubSeed||addr bits
+	PublicInputs  []ot.Wire
 	OutputHints   []ot.Wire
+	Public        PublicData
+	Meta          CircuitMeta
 }
 
 // GarblerSession is the garbler-side immutable state.

@@ -17,8 +17,8 @@ var (
 	errNilCurve        = errors.New("wots2pc: elliptic curve must not be nil")
 )
 
-// GarblerRound1 sets up the OT sender side.
-func GarblerRound1(rng io.Reader, curve elliptic.Curve) (Round1Payload, *GarblerSession, error) {
+// GarblerRound1 sets up the OT sender side and advertises public data/meta.
+func GarblerRound1(rng io.Reader, curve elliptic.Curve, public PublicData, meta CircuitMeta) (Round1Payload, *GarblerSession, error) {
 	if rng == nil {
 		return Round1Payload{}, nil, errNilRandomSource
 	}
@@ -40,6 +40,8 @@ func GarblerRound1(rng io.Reader, curve elliptic.Curve) (Round1Payload, *Garbler
 	}
 	payload := Round1Payload{
 		SessionID: sessionID,
+		Public:    public,
+		Meta:      meta,
 		OT: OTSenderSetup{
 			CurveName: setup.CurveName,
 			A: ot.ECPoint{
@@ -52,9 +54,7 @@ func GarblerRound1(rng io.Reader, curve elliptic.Curve) (Round1Payload, *Garbler
 }
 
 // GarblerRound3 garbles the chain circuit and packages payloads for evaluator.
-// pubSeed and addr are public; they are modeled as garbler inputs so we can
-// supply both labels to the evaluator for reuse across addresses.
-func GarblerRound3(rng io.Reader, curve elliptic.Curve, state *GarblerSession, skSeedG [32]byte, msg Round2Payload) (Round3Payload, error) {
+func GarblerRound3(rng io.Reader, curve elliptic.Curve, circ *circuit.Circuit, public PublicData, meta CircuitMeta, state *GarblerSession, skSeedG [32]byte, msg Round2Payload) (Round3Payload, error) {
 	if rng == nil {
 		return Round3Payload{}, errNilRandomSource
 	}
@@ -64,13 +64,29 @@ func GarblerRound3(rng io.Reader, curve elliptic.Curve, state *GarblerSession, s
 	if curve == nil {
 		return Round3Payload{}, errNilCurve
 	}
-	circ := wotsChainCircuit
-	if circ.NumParties() != 2 {
-		return Round3Payload{}, fmt.Errorf("expected 2-party circuit, got %d", circ.NumParties())
+	if circ == nil {
+		return Round3Payload{}, fmt.Errorf("nil circuit")
 	}
 	if msg.SessionID != state.SessionID {
 		return Round3Payload{}, fmt.Errorf("session id mismatch: got %d want %d", msg.SessionID, state.SessionID)
 	}
+	if msg.Public != public {
+		return Round3Payload{}, fmt.Errorf("public data mismatch")
+	}
+	if msg.Meta != meta {
+		return Round3Payload{}, fmt.Errorf("circuit meta mismatch")
+	}
+
+	info, err := deriveInfo(circ)
+	if err != nil {
+		return Round3Payload{}, err
+	}
+
+	const secretBits = 256
+	if info.GarblerBits < secretBits {
+		return Round3Payload{}, fmt.Errorf("garbler bits %d too small", info.GarblerBits)
+	}
+	publicBits := info.GarblerBits - secretBits
 
 	var key [32]byte
 	if _, err := io.ReadFull(rng, key[:]); err != nil {
@@ -81,36 +97,29 @@ func GarblerRound3(rng io.Reader, curve elliptic.Curve, state *GarblerSession, s
 		return Round3Payload{}, err
 	}
 
-	// Garbler secret labels (skSeedG).
-	gBits := garblerSecretBits
-	gBitsAll := garblerInputBitCount
-	secretBits := bytesToBitsLittle(skSeedG[:])
-	if len(secretBits) != gBits {
-		return Round3Payload{}, fmt.Errorf("garbler input mismatch: got %d bits want %d", len(secretBits), gBits)
+	secretBitsArr := bytesToBitsLittle(skSeedG[:])
+	if len(secretBitsArr) != secretBits {
+		return Round3Payload{}, fmt.Errorf("garbler secret mismatch: got %d bits want %d", len(secretBitsArr), secretBits)
 	}
-	garblerLabels := make([]ot.Label, gBits)
-	for i := 0; i < gBits; i++ {
-		garblerLabels[i] = circuit.LabelForBit(garbled.Wires[i], secretBits[i])
+	garblerLabels := make([]ot.Label, secretBits)
+	for i := 0; i < secretBits; i++ {
+		garblerLabels[i] = circuit.LabelForBit(garbled.Wires[i], secretBitsArr[i])
 	}
 
-	// Public wires (PubSeed||Addr).
-	publicLabels := make([]ot.Wire, publicBitCount)
-	startPublic := gBits
-	for i := 0; i < publicBitCount; i++ {
+	publicLabels := make([]ot.Wire, publicBits)
+	startPublic := secretBits
+	for i := 0; i < publicBits; i++ {
 		publicLabels[i] = garbled.Wires[startPublic+i]
 	}
 
-	// Evaluator wires.
-	evaluatorWires := garbled.Wires[gBitsAll : gBitsAll+evaluatorBitCount]
+	evaluatorWires := garbled.Wires[info.GarblerBits : info.GarblerBits+info.EvaluatorBits]
 	ciphertexts, err := ot.EncryptCOCiphertexts(curve, state.SenderSetup, msg.Choices, evaluatorWires)
 	if err != nil {
 		return Round3Payload{}, err
 	}
 
-	// Output hints.
-	outputs := circ.Outputs.Size()
-	outputHints := make([]ot.Wire, outputs)
-	start := int(circ.NumWires) - outputs
+	outputHints := make([]ot.Wire, info.OutputBits)
+	start := int(circ.NumWires) - info.OutputBits
 	copy(outputHints, garbled.Wires[start:])
 
 	return Round3Payload{
@@ -121,5 +130,7 @@ func GarblerRound3(rng io.Reader, curve elliptic.Curve, state *GarblerSession, s
 		GarblerInputs: garblerLabels,
 		PublicInputs:  publicLabels,
 		OutputHints:   outputHints,
+		Public:        public,
+		Meta:          meta,
 	}, nil
 }
