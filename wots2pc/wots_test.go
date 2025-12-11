@@ -84,10 +84,16 @@ func TestVerify(t *testing.T) {
 		skSeed[i] = byte(i)
 		pubSeed[i] = byte(0xff - i)
 	}
-	ctx, _ := NewContext(skSeed[:], pubSeed[:])
+	ctx, err := NewContext(skSeed[:], pubSeed[:])
+	if err != nil {
+		t.Fatalf("NewContext: %v", err)
+	}
 	var addr Address
 	msg := bytes.Repeat([]byte{0x42}, 32)
-	sig, _ := Sign(ctx, addr, msg)
+	sig, err := Sign(ctx, addr, msg)
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
 	pk := PublicKey(ctx, addr)
 
 	if !Verify(ctx, addr, msg, sig, pk) {

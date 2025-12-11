@@ -20,19 +20,39 @@ func Example_publicKey2PC() {
 	var addr Address
 
 	// Reference PK.
-	ctx, _ := NewContext(skSeed[:], pubSeed[:])
+	ctx, err := NewContext(skSeed[:], pubSeed[:])
+	if err != nil {
+		fmt.Printf("error: %v\n", err)
+		return
+	}
 	refPK := PublicKey(ctx, addr)
 
 	// 2PC: rounds mirror sha2pc.
-	msg1, gState, _ := GarblerRound1(crand.Reader, CurveP256)
-	msg2, eState, _ := EvaluatorRound2(crand.Reader, CurveP256, msg1, skE)
-	msg3, _ := GarblerRound3(crand.Reader, CurveP256, gState, skG, msg2)
+	msg1, gState, err := GarblerRound1(crand.Reader, CurveP256)
+	if err != nil {
+		fmt.Printf("error: %v\n", err)
+		return
+	}
+	msg2, eState, err := EvaluatorRound2(crand.Reader, CurveP256, msg1, skE)
+	if err != nil {
+		fmt.Printf("error: %v\n", err)
+		return
+	}
+	msg3, err := GarblerRound3(crand.Reader, CurveP256, gState, skG, msg2)
+	if err != nil {
+		fmt.Printf("error: %v\n", err)
+		return
+	}
 
 	pk := make([]byte, len(refPK))
 	for i := 0; i < SHA2_256sParams.Len; i++ {
 		a := addr
 		a.SetChain(byte(i))
-		elem, _ := EvaluatorRound4(CurveP256, eState, msg3, pubSeed, a)
+		elem, err := EvaluatorRound4(CurveP256, eState, msg3, pubSeed, a)
+		if err != nil {
+			fmt.Printf("error: %v\n", err)
+			return
+		}
 		copy(pk[i*32:(i+1)*32], elem[:])
 	}
 
